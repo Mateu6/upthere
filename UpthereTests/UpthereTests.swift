@@ -143,3 +143,25 @@ struct HookInstallerTests {
         #expect(left.keys.sorted() == ["PreToolUse"])
     }
 }
+
+@MainActor
+struct HoverRegionTests {
+    @Test func sideComesFromCursorPosition() {
+        let prefs = Preferences(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)
+        prefs.claudeEnabled = true
+        let claude = ClaudeModel()
+        claude.handle(HookEvent.parse(Data(#"{"hook_event_name":"UserPromptSubmit","session_id":"s","cwd":"/p"}"#.utf8))!)
+        // A 1512×982 screen with a 200pt notch, 32pt tall.
+        let geometry = NotchGeometry(
+            screenFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            notchRect: CGRect(x: 656, y: 950, width: 200, height: 32), hasNotch: true)
+        let model = NotchViewModel(
+            nowPlaying: NowPlayingModel(prefs: prefs), claude: claude, prefs: prefs, geometry: geometry)
+        // Collapsed Claude-only: both ears ~36pt + shoulder.
+        #expect(model.regionUnderCursor(at: CGPoint(x: 640, y: 970)) == .left)
+        #expect(model.regionUnderCursor(at: CGPoint(x: 870, y: 970)) == .right)
+        #expect(model.regionUnderCursor(at: CGPoint(x: 756, y: 970)) == .center)
+        #expect(model.regionUnderCursor(at: CGPoint(x: 400, y: 970)) == nil)
+        #expect(model.regionUnderCursor(at: CGPoint(x: 870, y: 900)) == nil)
+    }
+}

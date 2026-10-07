@@ -50,7 +50,6 @@ final class NotchViewModel {
     private(set) var hud: HUD?
     private(set) var hudSide: NotchSide = .right
 
-    @ObservationIgnored private var hovered: Set<NotchSide> = []
     @ObservationIgnored private var hoverTask: Task<Void, Never>?
     @ObservationIgnored private var outsideClickMonitor: Any?
     @ObservationIgnored private var scrollAxis: ScrollAxis?
@@ -109,9 +108,10 @@ final class NotchViewModel {
     var leftWidth: CGFloat { nudged(clamp(width(content.left), room: geometry.leftRoom)) }
     var rightWidth: CGFloat { nudged(clamp(width(content.right), room: geometry.rightRoom)) }
 
-    /// Window extents beside the notch: ear plus shoulder.
-    var leftExtent: CGFloat { leftWidth > 0 ? leftWidth + Theme.shoulderRadius : 0 }
-    var rightExtent: CGFloat { rightWidth > 0 ? rightWidth + Theme.shoulderRadius : 0 }
+    /// The widest an ear can get on this screen (including the hover nudge).
+    func maxEarWidth(room: CGFloat) -> CGFloat {
+        min(CGFloat(prefs.maxEarWidth), max(0, room - 8 - Theme.shoulderRadius)) + 6
+    }
 
     private var unit: CGFloat { geometry.height }
 
@@ -222,32 +222,46 @@ final class NotchViewModel {
 
     // MARK: Interaction
 
-    func hover(_ side: NotchSide, inside: Bool) {
-        if inside { hovered.insert(side) } else { hovered.remove(side) }
+    /// Hover enter/exit events only say "something changed": which side is
+    /// hovered is read from the cursor's actual position. Events from two
+    /// panels (and missed exits when a panel shrinks under the cursor) can
+    /// arrive in any order, so trusting them made the wrong ear flash open.
+    func hover(_ region: NotchSide, inside: Bool) {
         hoverTask?.cancel()
-
-        let side: NotchSide? =
-            hovered.isEmpty ? nil : hovered.contains(.left) ? .left : hovered.contains(.right) ? .right : .center
-        if let side {
+        if let side = regionUnderCursor() {
             if mode == .collapsed && !hoverNudge { hoverNudge = true }
             guard mode != .expanded, mode != .peek(side) else { return }
             // Hover intent: ignore the cursor just passing through the menu bar.
-            let delay: Duration = mode == .collapsed ? .milliseconds(120) : .milliseconds(70)
+            let delay: Duration = mode == .collapsed ? .milliseconds(70) : .milliseconds(40)
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: delay)
-                guard !Task.isCancelled else { return }
-                self?.setMode(.peek(side))
+                guard !Task.isCancelled, let self, let side = self.regionUnderCursor() else { return }
+                self.setMode(.peek(side))
             }
         } else {
             if hoverNudge { hoverNudge = false }
             guard mode != .collapsed else { return }
-            let delay: Duration = mode == .expanded ? .milliseconds(700) : .milliseconds(300)
+            let delay: Duration = mode == .expanded ? .milliseconds(600) : .milliseconds(240)
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: delay)
-                guard !Task.isCancelled else { return }
-                self?.collapse()
+                guard !Task.isCancelled, let self, self.regionUnderCursor() == nil else { return }
+                self.collapse()
             }
         }
+    }
+
+    /// Which part of the notch is under the cursor: an ear (with its
+    /// shoulder), the notch itself, or nothing.
+    func regionUnderCursor(at point: CGPoint? = nil) -> NotchSide? {
+        let p = point ?? NSEvent.mouseLocation
+        let g = geometry
+        guard p.y >= g.screenFrame.maxY - g.height - 1, p.y <= g.screenFrame.maxY + 1 else { return nil }
+        let left = leftWidth > 0 ? leftWidth + Theme.shoulderRadius : 0
+        let right = rightWidth > 0 ? rightWidth + Theme.shoulderRadius : 0
+        if p.x >= g.notchRect.minX && p.x <= g.notchRect.maxX { return g.hasNotch || left + right > 0 ? .center : nil }
+        if p.x < g.notchRect.minX && p.x >= g.notchRect.minX - left { return .left }
+        if p.x > g.notchRect.maxX && p.x <= g.notchRect.maxX + right { return .right }
+        return nil
     }
 
     #if DEBUG
@@ -265,7 +279,7 @@ final class NotchViewModel {
     func tap() {
         hoverTask?.cancel()
         if mode == .expanded {
-            if hovered.isEmpty { collapse() } else { setMode(.peek(.center)) }
+            if let side = regionUnderCursor() { setMode(.peek(side)) } else { collapse() }
         } else {
             setMode(.expanded)
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)

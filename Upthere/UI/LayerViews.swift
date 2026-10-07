@@ -5,6 +5,15 @@ import SwiftUI
 // Continuous animations live on the render server as Core Animation layer
 // animations, so they cost the app no CPU per frame (unlike SwiftUI
 // repeatForever animations, which tick in-process).
+//
+// Ambient loops are capped below the display's native rate: they look the
+// same at 60 Hz (or 30 for the slow progress line) and leave the GPU idle
+// more often. Open/close springs run at the native rate (see EarWindow).
+
+extension CAAnimation {
+    static let ambientFrameRate = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+    static let slowFrameRate = CAFrameRateRange(minimum: 8, maximum: 30, preferred: 30)
+}
 
 // MARK: - Audio bars
 
@@ -71,6 +80,7 @@ final class AudioBarsNSView: NSView {
             animation.repeatCount = .infinity
             animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             animation.beginTime = now - Self.phases[index]
+            animation.preferredFrameRateRange = CAAnimation.ambientFrameRate
             bar.add(animation, forKey: "bounce")
         }
     }
@@ -144,6 +154,7 @@ final class ProgressLineNSView: NSView {
                 animation.timingFunction = CAMediaTimingFunction(name: .linear)
                 animation.fillMode = .forwards
                 animation.isRemovedOnCompletion = false
+                animation.preferredFrameRateRange = CAAnimation.slowFrameRate
                 fill.add(animation, forKey: "progress")
             }
         }
@@ -218,6 +229,7 @@ final class ClaudeSparkNSView: NSView {
             spin.toValue = -CGFloat.pi * 2
             spin.duration = 2.8
             spin.repeatCount = .infinity
+            spin.preferredFrameRateRange = CAAnimation.ambientFrameRate
             shape.add(spin, forKey: "spin")
             let breathe = CABasicAnimation(keyPath: "transform.scale")
             breathe.fromValue = 0.82
@@ -226,6 +238,7 @@ final class ClaudeSparkNSView: NSView {
             breathe.autoreverses = true
             breathe.repeatCount = .infinity
             breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            breathe.preferredFrameRateRange = CAAnimation.ambientFrameRate
             shape.add(breathe, forKey: "breathe")
         case .waiting:
             let pulse = CABasicAnimation(keyPath: "opacity")
@@ -235,6 +248,7 @@ final class ClaudeSparkNSView: NSView {
             pulse.autoreverses = true
             pulse.repeatCount = .infinity
             pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            pulse.preferredFrameRateRange = CAAnimation.ambientFrameRate
             shape.add(pulse, forKey: "pulse")
         case .idle:
             break

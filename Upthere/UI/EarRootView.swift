@@ -19,9 +19,10 @@ enum Theme {
     }
 }
 
-/// One ear plus half of the notch. The background is a single shape spanning
-/// both (no seam at the notch edge); the ear hugs the notch, and anything
-/// beyond it is transparent (and only exists while the window shrinks).
+/// One side: its half of the notch plus the ear, laid out in a fixed-size
+/// container anchored at the notch. The visible shape (and its open/close
+/// animation) is a Core Animation mask owned by `EarWindow`, so this view
+/// just fills the container and places content at the target width.
 struct EarRootView: View {
     let model: NotchViewModel
     let side: NotchSide
@@ -31,24 +32,22 @@ struct EarRootView: View {
         let width = side == .left ? model.leftWidth : model.rightWidth
         let height = model.geometry.height
         let half = model.geometry.notchWidth / 2
-        let earFrame = width > 0 ? width + Theme.shoulderRadius : 0
-        let alignment: Alignment = side == .left ? .trailing : .leading
 
-        ZStack(alignment: alignment) {
-            BandBackground(model: model, side: side, notchHalf: half, earOpen: width > 0)
-                .frame(width: earFrame + half, height: height)
+        ZStack {
+            Background(model: model, side: side, notchHalf: half, earOpen: width > 0)
             HStack(spacing: 0) {
                 if side == .left {
-                    ear(width: width, frame: earFrame, height: height)
+                    Spacer(minLength: 0)
+                    ear(width: width, height: height)
                     notchHalf(width: half)
                 } else {
                     notchHalf(width: half)
-                    ear(width: width, frame: earFrame, height: height)
+                    ear(width: width, height: height)
+                    Spacer(minLength: 0)
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-        .animation(Theme.spring, value: width)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contextMenu {
             Button("Settings…", action: actions.openSettings)
             Button("Check for Updates…", action: actions.checkForUpdates)
@@ -57,10 +56,8 @@ struct EarRootView: View {
         }
     }
 
-    private func ear(width: CGFloat, frame: CGFloat, height: CGFloat) -> some View {
-        let shape = EarShape(side: side)
-        let alignment: Alignment = side == .left ? .trailing : .leading
-        return Group {
+    private func ear(width: CGFloat, height: CGFloat) -> some View {
+        Group {
             if side == .left {
                 LeftEarContent(model: model, content: model.content.left)
             } else {
@@ -68,16 +65,12 @@ struct EarRootView: View {
             }
         }
         .frame(width: width, height: height)
-        // The shoulder flare sits outside the ear's content width.
-        .frame(width: frame, height: height, alignment: alignment)
-        .clipShape(shape)
-        .contentShape(shape)
+        .contentShape(Rectangle())
         .onHover { model.hover(side, inside: $0) }
         .onTapGesture { model.tap() }
     }
 
-    /// Hover/click target under the physical notch, so the notch itself
-    /// reacts. Drawing is done by the band behind it.
+    /// Hover/click target under the physical notch, so the notch itself reacts.
     private func notchHalf(width: CGFloat) -> some View {
         Color.clear
             .frame(width: width)
@@ -87,85 +80,80 @@ struct EarRootView: View {
     }
 }
 
-/// The ear and its half of the notch as one shape.
+/// Fills the whole container; the mask decides what shows.
 /// Classic: solid black, so the ears read as part of the notch.
 /// Aurora: see `AuroraFill`.
-private struct BandBackground: View {
+private struct Background: View {
     let model: NotchViewModel
     let side: NotchSide
     let notchHalf: CGFloat
     let earOpen: Bool
 
     var body: some View {
-        let shape = EarShape(side: side, notchExtension: notchHalf)
         switch model.prefs.theme {
-        case .classic:
-            shape.fill(.black)
-        case .aurora where !earOpen:
-            // Nothing live: just the notch, invisible against the real one.
-            shape.fill(.black)
-        case .aurora:
-            AuroraFill(
-                shape: shape, colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side,
-                notchHalf: notchHalf)
+        case .aurora where earOpen:
+            AuroraFill(colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side, notchHalf: notchHalf)
+        default:
+            Color.black
         }
     }
 }
 
 /// Liquid Glass tinted with the cover's colors. Black at the top (melting
 /// into the bezel) and towards the notch (so its sides blend in), clearing
-/// outwards and downwards where the colors show. Colors run from the notch
-/// outwards.
-struct AuroraFill<S: Shape>: View {
-    let shape: S
+/// outwards and downwards where the colors show. Stops are in points from
+/// the notch, so the gradient stays put while the ear opens and closes.
+struct AuroraFill: View {
     let colors: [Color]
     let side: NotchSide
-    /// Width of the notch part at the inner edge of the band.
     let notchHalf: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
             let w = max(proxy.size.width, 1)
-            // Unit positions measured from the inner (notch center) edge.
-            let notchEdge = min(1, notchHalf / w)
-            let fadeEnd = min(1, (notchHalf + 28) / w)
+            let at = { (points: CGFloat) in min(1, points / w) }
+            let notchEdge = at(notchHalf)
+            let fadeEnd = at(notchHalf + 28)
             let inner: UnitPoint = side == .left ? .trailing : .leading
             let outer: UnitPoint = side == .left ? .leading : .trailing
             ZStack {
-                shape.fill(.clear)
-                    .glassEffect(.clear.tint(colors[0].opacity(0.2)), in: shape)
+                Rectangle().fill(.clear)
+                    .glassEffect(.clear.tint(colors[0].opacity(0.2)), in: Rectangle())
                 // The cover's colors, strongest at the bottom and away from the notch.
-                shape.fill(
-                    LinearGradient(
-                        stops: [
-                            .init(color: colors[0], location: 0),
-                            .init(color: colors[0], location: fadeEnd),
-                            .init(color: colors[1], location: (fadeEnd + 1) / 2),
-                            .init(color: colors[2], location: 1),
-                        ], startPoint: inner, endPoint: outer)
-                )
-                .opacity(0.75)
-                .mask(
-                    LinearGradient(
-                        stops: [.init(color: .clear, location: 0.1), .init(color: .white, location: 1)],
-                        startPoint: .top, endPoint: .bottom))
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: colors[0], location: 0),
+                                .init(color: colors[0], location: fadeEnd),
+                                .init(color: colors[1], location: at(notchHalf + 150)),
+                                .init(color: colors[2], location: at(notchHalf + 300)),
+                            ], startPoint: inner, endPoint: outer)
+                    )
+                    .opacity(0.75)
+                    .mask(
+                        LinearGradient(
+                            stops: [.init(color: .clear, location: 0.1), .init(color: .white, location: 1)],
+                            startPoint: .top, endPoint: .bottom))
                 // Black towards the notch: solid at its center, gone just past its edge.
-                shape.fill(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black.opacity(0.75), location: notchEdge * 0.7),
-                            .init(color: .black.opacity(0.35), location: notchEdge),
-                            .init(color: .black.opacity(0), location: fadeEnd),
-                        ], startPoint: inner, endPoint: outer))
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black.opacity(0.75), location: notchEdge * 0.7),
+                                .init(color: .black.opacity(0.35), location: notchEdge),
+                                .init(color: .black.opacity(0), location: fadeEnd),
+                            ], startPoint: inner, endPoint: outer))
                 // Black at the top, clear at the bottom.
-                shape.fill(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black.opacity(0.85), location: 0.38),
-                            .init(color: .black.opacity(0.05), location: 1),
-                        ], startPoint: .top, endPoint: .bottom))
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black.opacity(0.85), location: 0.38),
+                                .init(color: .black.opacity(0.05), location: 1),
+                            ], startPoint: .top, endPoint: .bottom))
             }
         }
         .animation(.easeInOut(duration: 0.6), value: colors)

@@ -14,6 +14,7 @@ enum DebugBridge {
         ) { note in
             let mode = note.userInfo?["mode"] as? String
             let dir = note.userInfo?["snapshot"] as? String
+            let delay = Int(note.userInfo?["delay"] as? String ?? "") ?? 900
             MainActor.assumeIsolated {
                 switch mode {
                 case "collapsed": model.debugSetMode(.collapsed)
@@ -30,7 +31,7 @@ enum DebugBridge {
                 }
                 guard let dir else { return }
                 Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(900))
+                    try? await Task.sleep(for: .milliseconds(delay))
                     for (name, view) in panels() { snapshot(view, to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")) }
                     let g = model.geometry
                     let rect = CGRect(
