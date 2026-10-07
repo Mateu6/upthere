@@ -34,7 +34,7 @@ final class NotchWindowController {
         observeDisplayPreference()
         apply(left: model.leftWidth, right: model.rightWidth)
         #if DEBUG
-        DebugBridge.install(model: model) { [left, right] in
+        DebugBridge.install(model: model, actions: actions) { [left, right] in
             [("left", left.panel.contentView!), ("right", right.panel.contentView!)]
         }
         #endif

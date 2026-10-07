@@ -38,6 +38,7 @@ Builds are ad-hoc signed by default. To sign with your own team, create `Config/
 ```
 DEVELOPMENT_TEAM = ABCDE12345
 CODE_SIGN_IDENTITY = Developer ID Application
+ENABLE_HARDENED_RUNTIME = YES
 ```
 
 Run the tests with `xcodebuild -scheme Upthere -derivedDataPath build/DerivedData test`.

@@ -3,12 +3,12 @@ import AppKit
 
 /// Debug-only remote control, so the UI can be inspected from a shell:
 ///   swift scripts/debug-notch.swift peek /tmp/out
-/// Posts `dev.upthere.debug` with `mode` (collapsed|peek-left|peek-right|peek|expanded)
+/// Posts `dev.upthere.debug` with `mode` (collapsed|peek-left|peek-right|peek|expanded|check-updates)
 /// and an optional `snapshot` directory that receives left.png/right.png.
 enum DebugBridge {
     nonisolated(unsafe) private static var observer: NSObjectProtocol?
 
-    static func install(model: NotchViewModel, panels: @escaping @MainActor @Sendable () -> [(String, NSView)]) {
+    static func install(model: NotchViewModel, actions: NotchActions, panels: @escaping @MainActor @Sendable () -> [(String, NSView)]) {
         observer = DistributedNotificationCenter.default().addObserver(
             forName: .init("dev.upthere.debug"), object: nil, queue: .main
         ) { note in
@@ -21,6 +21,7 @@ enum DebugBridge {
                 case "peek-left": model.debugSetMode(.peek(.left))
                 case "peek-right": model.debugSetMode(.peek(.right))
                 case "expanded": model.debugSetMode(.expanded)
+                case "check-updates": actions.checkForUpdates()
                 default: break
                 }
                 guard let dir else { return }

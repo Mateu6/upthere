@@ -28,6 +28,14 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Upthere controls Spotify and Music directly so play/pause always reaches your music player, not a browser tab.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Mateu6/upthere/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>MaI3pxrarrG2YM6p2Z38RxOk2qndQ4Vjw0Vqaj7n/B8=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License</string>
 </dict>

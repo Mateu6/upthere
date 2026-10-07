@@ -31,5 +31,6 @@ install -m 0644 "$SRC/LICENSE" "$DEST/LICENSE"
 
 IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:--}"
 [ -z "$IDENTITY" ] && IDENTITY="-"
-codesign --force --sign "$IDENTITY" --options runtime \
+OPTS=(); [ "${ENABLE_HARDENED_RUNTIME:-NO}" = "YES" ] && OPTS=(--options runtime)
+codesign --force --sign "$IDENTITY" ${OPTS[@]+"${OPTS[@]}"} \
   "$DEST/MediaRemoteAdapter.framework" "$DEST/MediaRemoteAdapterTestClient" >/dev/null

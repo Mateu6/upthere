@@ -5,6 +5,7 @@ nonisolated let log = Logger(subsystem: "dev.upthere.app", category: "app")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let prefs = Preferences()
+    let updater = Updater()
     private(set) lazy var nowPlaying = NowPlayingModel(prefs: prefs)
     private(set) lazy var claude = ClaudeModel()
     private var notch: NotchWindowController?
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nowPlaying.start()
         if prefs.claudeEnabled { claude.start() }
         HookInstaller.refreshInstalledHelperIfNeeded()
+        updater.start()
 
         notch = NotchWindowController(
             nowPlaying: nowPlaying,
@@ -29,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             prefs: prefs,
             actions: NotchActions(
                 openSettings: { [weak self] in self?.showSettings() },
+                checkForUpdates: { [weak self] in self?.updater.checkForUpdates() },
                 quit: { NSApp.terminate(nil) }
             )
         )
@@ -53,7 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showSettings() {
         if settings == nil {
-            settings = SettingsWindowController(prefs: prefs, nowPlaying: nowPlaying, claude: claude)
+            settings = SettingsWindowController(
+                prefs: prefs, nowPlaying: nowPlaying, claude: claude, updater: updater)
         }
         settings?.show()
     }

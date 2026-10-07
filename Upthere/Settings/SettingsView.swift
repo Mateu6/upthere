@@ -5,8 +5,9 @@ import SwiftUI
 final class SettingsWindowController {
     private let window: NSWindow
 
-    init(prefs: Preferences, nowPlaying: NowPlayingModel, claude: ClaudeModel) {
-        let controller = NSHostingController(rootView: SettingsView(prefs: prefs, nowPlaying: nowPlaying, claude: claude))
+    init(prefs: Preferences, nowPlaying: NowPlayingModel, claude: ClaudeModel, updater: Updater) {
+        let controller = NSHostingController(
+            rootView: SettingsView(prefs: prefs, nowPlaying: nowPlaying, claude: claude, updater: updater))
         window = NSWindow(contentViewController: controller)
         window.title = "Upthere Settings"
         window.styleMask = [.titled, .closable]
@@ -25,6 +26,7 @@ struct SettingsView: View {
     @Bindable var prefs: Preferences
     let nowPlaying: NowPlayingModel
     let claude: ClaudeModel
+    @Bindable var updater: Updater
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var hooksInstalled = HookInstaller.isInstalled
@@ -107,8 +109,15 @@ struct SettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section("Updates") {
+                Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
+                LabeledContent("Version \(updater.currentVersion)") {
+                    Button("Check Now", action: updater.checkForUpdates)
+                        .disabled(!updater.canCheckForUpdates)
+                }
+            }
+
             Section("About") {
-                LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–")
                 Link("github.com/Mateu6/upthere", destination: URL(string: "https://github.com/Mateu6/upthere")!)
             }
         }

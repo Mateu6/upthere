@@ -1,5 +1,15 @@
 name: Release
 
+# Push a tag like v0.2.0 to publish a release. The DMG and a signed Sparkle
+# appcast.xml are attached to the GitHub release; installed apps read
+# releases/latest/download/appcast.xml.
+#
+# Secrets:
+#   SPARKLE_ED_PRIVATE_KEY      required: `generate_keys -x key.txt --account dev.upthere.app`
+#   DEVELOPER_ID_CERT_P12       optional: base64 Developer ID Application .p12
+#   DEVELOPER_ID_CERT_PASSWORD  optional
+#   APPLE_TEAM_ID / APPLE_ID / APPLE_APP_PASSWORD   optional, for notarization
+
 on:
   push:
     tags: ["v*"]
@@ -12,11 +22,18 @@ jobs:
     runs-on: macos-26
     env:
       HAS_SIGNING: ${{ secrets.DEVELOPER_ID_CERT_P12 != '' }}
+      SPARKLE_BIN: build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
       - run: brew install xcodegen cmake create-dmg
+
+      - name: Version
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
 
       - name: Import signing certificate
         if: env.HAS_SIGNING == 'true'
@@ -31,13 +48,26 @@ jobs:
           security unlock-keychain -p ci build.keychain
           security import cert.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
-          printf 'DEVELOPMENT_TEAM = %s\nCODE_SIGN_IDENTITY = Developer ID Application\nOTHER_CODE_SIGN_FLAGS = --timestamp\n' "$TEAM_ID" > Config/Local.xcconfig
+          rm cert.p12
+          printf 'DEVELOPMENT_TEAM = %s\nCODE_SIGN_IDENTITY = Developer ID Application\nENABLE_HARDENED_RUNTIME = YES\nOTHER_CODE_SIGN_FLAGS = --timestamp\n' "$TEAM_ID" > Config/Local.xcconfig
 
       - name: Build
         run: |
           xcodegen generate
-          xcodebuild -scheme Upthere -configuration Release -derivedDataPath build/DerivedData build
-          cp -R build/DerivedData/Build/Products/Release/Upthere.app .
+          xcodebuild -scheme Upthere -configuration Release -derivedDataPath build/DerivedData \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build
+          ditto build/DerivedData/Build/Products/Release/Upthere.app Upthere.app
+
+      - name: Re-sign Sparkle helpers with Developer ID
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          ID="Developer ID Application"
+          FW=Upthere.app/Contents/Frameworks/Sparkle.framework
+          for item in "$FW"/Versions/B/XPCServices/*.xpc "$FW/Versions/B/Autoupdate" "$FW/Versions/B/Updater.app" "$FW"; do
+            codesign -f -s "$ID" -o runtime --timestamp "$item"
+          done
+          codesign -f -s "$ID" -o runtime --timestamp --entitlements Upthere/Upthere.entitlements Upthere.app
+          codesign --verify --deep --strict Upthere.app
 
       - name: Notarize
         if: env.HAS_SIGNING == 'true'
@@ -49,14 +79,32 @@ jobs:
           ditto -c -k --keepParent Upthere.app Upthere.zip
           xcrun notarytool submit Upthere.zip --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$TEAM_ID" --wait
           xcrun stapler staple Upthere.app
+          rm Upthere.zip
 
-      - name: Package
+      - name: Package DMG
         run: |
+          mkdir -p updates
+          # create-dmg exits non-zero when it can't style the Finder window on a headless runner.
           create-dmg --volname Upthere --app-drop-link 400 120 --window-size 560 300 --icon Upthere.app 160 120 \
-            "Upthere-${GITHUB_REF_NAME}.dmg" Upthere.app || true
-          ls *.dmg
+            "updates/Upthere-${VERSION}.dmg" Upthere.app || test -f "updates/Upthere-${VERSION}.dmg"
+
+      - name: Generate Sparkle appcast
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          test -n "$SPARKLE_KEY" || { echo "::error::SPARKLE_ED_PRIVATE_KEY secret is missing"; exit 1; }
+          echo "$SPARKLE_KEY" > sparkle.key
+          "$SPARKLE_BIN/generate_appcast" --ed-key-file sparkle.key \
+            --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
+            --link "https://github.com/${GITHUB_REPOSITORY}" \
+            --full-release-notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
+            -o updates/appcast.xml updates
+          rm sparkle.key
+          cat updates/appcast.xml
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: Upthere-*.dmg
+          files: |
+            updates/Upthere-*.dmg
+            updates/appcast.xml
           generate_release_notes: true

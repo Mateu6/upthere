@@ -44,6 +44,7 @@ struct EarRootView: View {
         .animation(Theme.spring, value: width)
         .contextMenu {
             Button("Settings…", action: actions.openSettings)
+            Button("Check for Updates…", action: actions.checkForUpdates)
             Divider()
             Button("Quit Upthere", action: actions.quit)
         }

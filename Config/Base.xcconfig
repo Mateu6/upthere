@@ -3,8 +3,14 @@
 // Put your own team in Config/Local.xcconfig (gitignored), e.g.:
 //   DEVELOPMENT_TEAM = ABCDE12345
 //   CODE_SIGN_IDENTITY = Developer ID Application
+//   ENABLE_HARDENED_RUNTIME = YES
+//
+// Hardened runtime stays off for ad-hoc builds: its library validation
+// rejects embedded frameworks (Sparkle) when there is no Team ID to match.
+// Notarized builds (Developer ID) turn it on.
 CODE_SIGN_STYLE = Manual
 CODE_SIGN_IDENTITY = -
 DEVELOPMENT_TEAM =
+ENABLE_HARDENED_RUNTIME = NO
 
 #include? "Local.xcconfig"
