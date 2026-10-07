@@ -112,6 +112,7 @@ struct TimerTime: View {
     let timer: TrackedTimer
     var compact = false
     var font: Font = .system(size: 11.5, weight: .semibold)
+    var color: Color = .white
 
     var body: some View {
         // Compact text changes at most every 15 s until the last minute.
@@ -121,7 +122,7 @@ struct TimerTime: View {
                 .font(font.monospacedDigit())
                 .lineLimit(1)
                 .fixedSize()
-                .foregroundStyle(timer.isPaused ? Theme.secondary : .white)
+                .foregroundStyle(timer.isPaused ? Theme.secondary : color)
                 .contentTransition(.numericText())
         }
     }
@@ -139,6 +140,8 @@ struct TimerTime: View {
 /// status when it's live, and + to add another.
 struct TimerStrip: View {
     let model: NotchViewModel
+    /// The ear's width, so chips sit against the notch when they fit.
+    var stripWidth: CGFloat = 0
 
     var body: some View {
         let timers = model.timers
@@ -146,6 +149,7 @@ struct TimerStrip: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
+                    Spacer(minLength: 0)
                     if let session = model.claude.primary, model.prefs.claudeEnabled {
                         ClaudeChip(model: model, session: session, size: h - 16)
                     }
@@ -165,7 +169,9 @@ struct TimerStrip: View {
                     }
                 }
                 .padding(.horizontal, 6)
+                .frame(minWidth: stripWidth, alignment: .trailing)
             }
+            .defaultScrollAnchor(.trailing)
             .onAppear { if let id = timers.alertingID { proxy.scrollTo(id, anchor: .center) } }
             .onChange(of: timers.alertingID) { _, id in
                 if let id { withAnimation(.smooth) { proxy.scrollTo(id, anchor: .center) } }
@@ -187,15 +193,22 @@ struct TimerChip: View {
         HStack(spacing: 6) {
             TimerGlyph(timer: timer, color: color, size: size, alerting: alerting)
             VStack(alignment: .leading, spacing: 0) {
-                MarqueeText(
-                    text: alerting ? "Time's up · \(timer.label)" : timer.label,
-                    font: .system(size: 10.5, weight: .semibold),
-                    color: alerting ? Color(nsColor: color) : .white)
-                TimerTime(timer: timer, font: .system(size: 10, weight: .medium))
+                HStack(spacing: 3) {
+                    if timer.isPinned {
+                        Image(systemName: "pin.fill").font(.system(size: 7, weight: .bold)).foregroundStyle(Color(nsColor: color))
+                    }
+                    MarqueeText(
+                        text: alerting ? "Time's up · \(timer.label)" : timer.label,
+                        font: .system(size: 10.5, weight: .semibold))
+                }
+                TimerTime(timer: timer, font: .system(size: 10, weight: .semibold), color: Color(nsColor: color))
             }
             .frame(width: 92, alignment: .leading)
             if hovering {
                 HStack(spacing: 0) {
+                    chipButton(timer.isPinned ? "pin.slash.fill" : "pin.fill", help: timer.isPinned ? "Unpin" : "Keep visible") {
+                        timers.togglePin(timer.id)
+                    }
                     chipButton(timer.isPaused ? "play.fill" : "pause.fill", help: timer.isPaused ? "Resume" : "Pause") {
                         timers.togglePause(timer.id)
                     }
@@ -208,10 +221,16 @@ struct TimerChip: View {
             }
         }
         .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(
+        .padding(.leading, 7)
+        .padding(.trailing, 4)
+        .background {
+            // Color-coded: a tinted fill and a bar in the timer's color.
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color(nsColor: color).opacity(alerting ? 0.25 : hovering ? 0.12 : 0.06)))
+                .fill(Color(nsColor: color).opacity(alerting ? 0.34 : hovering ? 0.26 : 0.18))
+                .overlay(alignment: .leading) {
+                    Capsule().fill(Color(nsColor: color)).frame(width: 3).padding(.vertical, 4).padding(.leading, 2)
+                }
+        }
         .onHover { hovering = $0 }
         .animation(.smooth(duration: 0.2), value: hovering)
     }
@@ -226,6 +245,40 @@ struct TimerChip: View {
         }
         .buttonStyle(HoverButtonStyle())
         .help(help)
+    }
+}
+
+/// Collapsed timer ear: each pinned timer (or the urgent one) as its time
+/// in its color plus its glyph, right next to the notch; "+N" for the rest
+/// and a small spark while Claude works.
+struct TimerCollapsed: View {
+    let model: NotchViewModel
+
+    var body: some View {
+        let timers = model.timers
+        let h = model.geometry.height
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
+            if model.prefs.claudeEnabled, model.claude.primary?.activity.isWorking == true {
+                ClaudeSparkView(style: .working, color: Theme.claude).frame(width: 9, height: 9)
+            }
+            if timers.hiddenCount > 0 {
+                Text("+\(timers.hiddenCount)")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(Theme.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            ForEach(timers.collapsedTimers) { timer in
+                let color = timers.color(of: timer)
+                HStack(spacing: 4) {
+                    TimerTime(timer: timer, compact: true, color: Color(nsColor: color))
+                    TimerGlyph(timer: timer, color: color, size: h * 0.5, alerting: timers.alertingID == timer.id)
+                }
+                .transition(.blurReplace)
+            }
+        }
+        .animation(.smooth(duration: 0.25), value: timers.collapsedTimers.map(\.id))
     }
 }
 

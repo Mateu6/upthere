@@ -28,6 +28,8 @@ enum DebugBridge {
                 case let mode? where mode.hasPrefix("timer:"): model.timers.start(String(mode.dropFirst(6)))
                 case "timer-stopall": model.timers.stopAll()
                 case "timer-input": model.openTimerInput()
+                case "timer-pin-first": if let first = model.timers.timers.first { model.timers.togglePin(first.id) }
+                case "timer-pin-all": for t in model.timers.timers where !t.isPinned { model.timers.togglePin(t.id) }
                 case "claude-off": model.prefs.claudeEnabled = false
                 case "claude-on": model.prefs.claudeEnabled = true
                 case "seek-active": model.previewSeek((model.nowPlaying.current?.duration ?? 200) * 0.4)

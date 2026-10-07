@@ -165,14 +165,21 @@ struct TimerInputView: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(timers.timers.enumerated()), id: \.element.id) { index, timer in
                 HStack(spacing: 8) {
-                    Circle().fill(Color(nsColor: timers.color(of: timer))).frame(width: 8, height: 8)
+                    Capsule().fill(Color(nsColor: timers.color(of: timer))).frame(width: 4, height: 16)
                     Text(timer.label).font(.system(size: 13)).lineLimit(1)
                     Spacer(minLength: 8)
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(timeText(timer, at: context.date))
-                            .font(.system(size: 12.5, weight: .medium).monospacedDigit())
-                            .foregroundStyle(timer.isPaused ? .secondary : .primary)
+                            .font(.system(size: 12.5, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(timer.isPaused ? Color.secondary : Color(nsColor: timers.color(of: timer)))
                     }
+                    Button {
+                        timers.togglePin(timer.id)
+                    } label: {
+                        Image(systemName: timer.isPinned ? "pin.fill" : "pin")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(timer.isPinned ? "Unpin" : "Keep visible in the notch")
                     Button {
                         timers.togglePause(timer.id)
                     } label: {

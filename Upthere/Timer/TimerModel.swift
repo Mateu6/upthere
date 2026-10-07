@@ -14,6 +14,11 @@ nonisolated struct TrackedTimer: Codable, Identifiable, Equatable, Sendable {
     var pausedAt: Date?
     /// The countdown's "time's up" has fired.
     var alerted = false
+    /// Kept visible in the collapsed notch. (Optional so timers saved
+    /// before pinning existed still decode.)
+    var pinned: Bool?
+
+    var isPinned: Bool { pinned == true }
 
     var isPaused: Bool { pausedAt != nil }
     var isCountdown: Bool { countdown != nil }
@@ -99,6 +104,24 @@ final class TimerModel {
     }
 
     func color(of timer: TrackedTimer) -> NSColor { Self.palette[timer.colorIndex % Self.palette.count] }
+
+    /// What the collapsed notch shows: every pinned timer, otherwise the
+    /// urgent one. A countdown that just ended is always included.
+    var collapsedTimers: [TrackedTimer] {
+        var shown = timers.filter(\.isPinned)
+        if shown.isEmpty, let urgent { shown = [urgent] }
+        if let alerting = timers.first(where: { $0.id == alertingID }), !shown.contains(where: { $0.id == alerting.id }) {
+            shown.append(alerting)
+        }
+        return Array(shown.prefix(4))
+    }
+
+    /// Timers running but not shown collapsed.
+    var hiddenCount: Int { max(0, timers.count - collapsedTimers.count) }
+
+    func togglePin(_ id: UUID) {
+        update(id) { $0.pinned = $0.isPinned ? nil : true }
+    }
 
     // MARK: Actions
 

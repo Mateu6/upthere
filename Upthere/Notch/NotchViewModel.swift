@@ -194,12 +194,16 @@ final class NotchViewModel {
     }
 
     /// Ear widths, without the shoulder flare.
-    var leftWidth: CGFloat { nudged(clamp(width(content.left), room: geometry.leftRoom), .left) }
+    var leftWidth: CGFloat {
+        let content = content.left
+        let limit = content == .timerStrip ? timerStripLimit : nil
+        return nudged(clamp(width(content), room: geometry.leftRoom, limit: limit), .left)
+    }
     var rightWidth: CGFloat { nudged(clamp(width(content.right), room: geometry.rightRoom), .right) }
 
     /// The widest an ear can get on this screen (including the hover nudge).
     func maxEarWidth(room: CGFloat) -> CGFloat {
-        min(CGFloat(prefs.maxEarWidth), max(0, room - 8 - Theme.shoulderRadius)) + 6
+        min(max(CGFloat(prefs.maxEarWidth), timerStripLimit), max(0, room - 8 - Theme.shoulderRadius)) + 6
     }
 
     private var unit: CGFloat { geometry.height }
@@ -216,8 +220,8 @@ final class NotchViewModel {
         case .musicArt, .claudeGlyph: unit + 4
         case .musicInfo(let expanded): expanded ? 280 : 230
         case .queue: 360
-        case .timer: unit + 54
-        case .timerStrip: 380
+        case .timer: timerCollapsedWidth
+        case .timerStrip: timerStripWidth
         case .claudeDetail(let expanded): expanded ? 340 : 240
         }
     }
@@ -233,9 +237,43 @@ final class NotchViewModel {
         }
     }
 
-    private func clamp(_ width: CGFloat, room: CGFloat) -> CGFloat {
+    /// Collapsed timers hug their content: glyph + time per shown timer,
+    /// plus the "+N" badge and Claude's spark when present.
+    private var timerCollapsedWidth: CGFloat {
+        let now = Date.now
+        // ~7.4 pt per character of the 11.5 pt semibold monospaced digits.
+        let items = timers.collapsedTimers.map { timer -> CGFloat in
+            let text: String
+            if let remaining = timer.remaining(at: now) {
+                text = (remaining < 0 ? "+" : "") + TimerParser.compact(remaining)
+            } else {
+                text = TimerParser.compact(timer.elapsed(at: now))
+            }
+            return unit * 0.5 + 4 + CGFloat(text.count) * 7.4
+        }
+        let badge: CGFloat = timers.hiddenCount > 0 ? 10 + CGFloat("+\(timers.hiddenCount)".count) * 7 : 0
+        let spark: CGFloat = prefs.claudeEnabled && claude.primary?.activity.isWorking == true ? 17 : 0
+        let spacing = CGFloat(max(0, items.count - 1)) * 8
+        // Padding on both sides plus a little slack for a longer time.
+        return 14 + items.reduce(0, +) + spacing + badge + spark + 6
+    }
+
+    /// The hover strip hugs its chips (Claude, each timer, +), with room
+    /// for a hovered chip's buttons; it scrolls beyond the max width.
+    private var timerStripWidth: CGFloat {
+        let chip = unit + 92
+        let claudeChip: CGFloat = prefs.claudeEnabled && claude.primary != nil ? chip + 6 : 0
+        let add: CGFloat = timers.timers.count < TimerModel.maxTimers ? 30 : 0
+        return 12 + claudeChip + CGFloat(timers.timers.count) * (chip + 6) + add + 64
+    }
+
+    /// Timer strips may grow past the max ear width (they hug their chips),
+    /// up to the room beside the notch; past that they scroll.
+    private var timerStripLimit: CGFloat { max(CGFloat(prefs.maxEarWidth), 600) }
+
+    private func clamp(_ width: CGFloat, room: CGFloat, limit: CGFloat? = nil) -> CGFloat {
         guard width > 0 else { return 0 }
-        return min(width, CGFloat(prefs.maxEarWidth), max(0, room - 8 - Theme.shoulderRadius))
+        return min(width, limit ?? CGFloat(prefs.maxEarWidth), max(0, room - 8 - Theme.shoulderRadius))
     }
 
     /// Up Next: the right ear of a music-only notch, when open.
