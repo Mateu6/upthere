@@ -22,6 +22,8 @@ final class Updater: NSObject, SPUStandardUserDriverDelegate {
     }
 
     func start() {
+        // Development builds never replace themselves with a release.
+        #if !DEBUG
         controller.startUpdater()
         let updater = controller.updater
         automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
@@ -29,6 +31,7 @@ final class Updater: NSObject, SPUStandardUserDriverDelegate {
             let canCheck = updater.canCheckForUpdates
             Task { @MainActor in self?.canCheckForUpdates = canCheck }
         }
+        #endif
     }
 
     func checkForUpdates() {

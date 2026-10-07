@@ -55,6 +55,10 @@ targets:
       - name: Bundle MediaRemote adapter
         script: '"${SRCROOT}/scripts/build-adapter.sh"'
         basedOnDependencyAnalysis: false
+    postBuildScripts:
+      - name: Stamp build number
+        script: '/bin/bash "${SRCROOT}/scripts/stamp-build-number.sh"'
+        basedOnDependencyAnalysis: false
 
   upthere-hook:
     type: tool
