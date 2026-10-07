@@ -6,17 +6,27 @@ import SwiftUI
 ///
 /// The shoulder lives inside `rect` (its outermost `shoulderRadius` points),
 /// so callers widen the ear's frame by the shoulder radius.
+///
+/// With `notchExtension`, the shape also covers that much of the notch at its
+/// inner edge, so ear and notch strip are one seamless shape. With the ear
+/// closed it shrinks to the notch strip, its corner rounding to stay inside
+/// the physical notch's curve.
 struct EarShape: Shape {
     var side: NotchSide
+    var notchExtension: CGFloat = 0
     var bottomRadius: CGFloat = 10  // Theme.earRadius
     var shoulderRadius: CGFloat = 6  // Theme.shoulderRadius
+    var closedRadius: CGFloat = 12  // Theme.notchCornerRadius
 
     func path(in rect: CGRect) -> Path {
         let w = rect.width
         let h = rect.height
         guard w > 0.5, h > 0.5 else { return Path() }
-        let rs = min(shoulderRadius, w / 4)
-        let rb = max(0, min(bottomRadius, (w - rs) / 2, h / 2))
+        let ear = max(0, w - notchExtension)
+        let rs = min(shoulderRadius, ear / 4)
+        // Blend from the ear's radius to the notch's as the ear closes.
+        let target = bottomRadius + (closedRadius - bottomRadius) * max(0, 1 - ear / 24)
+        let rb = max(0, min(target, (w - rs) / 2, h / 2))
 
         var p = Path()
         p.move(to: CGPoint(x: 0, y: 0))
