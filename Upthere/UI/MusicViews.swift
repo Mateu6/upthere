@@ -26,13 +26,17 @@ struct ArtworkThumb: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
         .overlay(alignment: .bottomTrailing) {
-            if let badge, let icon = AppIcons.icon(for: badge) {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: size * 0.46, height: size * 0.46)
-                    .shadow(color: .black.opacity(0.6), radius: 1.5)
-                    .offset(x: size * 0.14, y: size * 0.12)
+            ZStack {
+                if let badge, let icon = AppIcons.icon(for: badge) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: size * 0.46, height: size * 0.46)
+                        .shadow(color: .black.opacity(0.6), radius: 1.5)
+                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                }
             }
+            .offset(x: size * 0.14, y: size * 0.12)
+            .animation(.spring(duration: 0.3, bounce: 0), value: badge)
         }
         .opacity(dimmed ? 0.55 : 1)
         .animation(.easeOut(duration: 0.2), value: artwork)
@@ -56,9 +60,10 @@ enum AppIcons {
 struct TrackText: View {
     let snapshot: PlaybackSnapshot
     var showAlbum = false
+    var alignment: HorizontalAlignment = .leading
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: alignment, spacing: 0) {
             Text(snapshot.title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)

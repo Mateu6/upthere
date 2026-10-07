@@ -31,18 +31,21 @@ struct ClaudeDetail: View {
     let expanded: Bool
 
     var body: some View {
-        let h = model.geometry.height
         let count = model.claude.visibleSessions.count
+        // The spark is the ear's anchor next to the notch (LeftEarContent);
+        // text reads outwards from it, buttons sit at the outer end.
         HStack(spacing: 8) {
-            if expanded && count > 1 {
-                pagerButton("chevron.left") { model.cycleSession(by: -1) }
+            if expanded {
+                pagerButton("arrow.up.forward.app") { model.claude.focus(session) }
+                    .help("Show terminal")
+                if count > 1 {
+                    pagerButton("chevron.left") { model.cycleSession(by: -1) }
+                    pagerButton("chevron.right") { model.cycleSession(by: 1) }
+                }
             }
-            ClaudeGlyph(session: session, size: h * 0.46)
-            VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: 0) {
                 HStack(spacing: 4) {
-                    Text(session.projectName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
                     if count > 1 && !expanded {
                         Text("+\(count - 1)")
                             .font(.system(size: 9, weight: .bold))
@@ -50,31 +53,24 @@ struct ClaudeDetail: View {
                             .padding(.horizontal, 4)
                             .background(Capsule().fill(.white.opacity(0.7)))
                     }
+                    Text(session.projectName)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
                 HStack(spacing: 4) {
-                    Text(statusLine)
                     if expanded {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text("· " + Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
+                            Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)) + " ·")
                                 .monospacedDigit()
                         }
                     }
+                    Text(statusLine)
                 }
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(statusColor)
             }
             .lineLimit(1)
-            Spacer(minLength: 0)
-            if expanded {
-                if count > 1 {
-                    pagerButton("chevron.right") { model.cycleSession(by: 1) }
-                }
-                pagerButton("arrow.up.forward.app") { model.claude.focus(session) }
-                    .help("Show terminal")
-            }
         }
-        .padding(.leading, expanded && count > 1 ? 4 : 12)
-        .padding(.trailing, 6)
     }
 
     private var statusLine: String {

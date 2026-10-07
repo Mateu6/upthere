@@ -2,6 +2,9 @@ import SwiftUI
 
 enum Theme {
     static let spring = Animation.spring(response: 0.36, dampingFraction: 0.84)
+    /// The ear open/close spring (perceptual duration; critically damped, no
+    /// overshoot), run by EarWindow on the mask.
+    static let earDuration: Double = 0.34
     static let claude = NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1)
     static let amber = NSColor(srgbRed: 1.0, green: 0.74, blue: 0.24, alpha: 1)
     static let secondary = Color.white.opacity(0.58)

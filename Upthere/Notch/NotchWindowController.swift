@@ -60,8 +60,8 @@ final class NotchWindowController {
             // onChange fires before the new value is stored; hop once.
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.observeLayout() } }
         }
-        left.setEar(l, animated: true)
-        right.setEar(r, animated: true)
+        left.setEar(l)
+        right.setEar(r)
     }
 
     private func observeConfiguration() {

@@ -3,13 +3,14 @@ import QuartzCore
 import SwiftUI
 
 /// One side of the notch: a panel showing a fixed-size, notch-anchored
-/// container whose visible shape is a Core Animation mask.
+/// container whose visible shape is a CAShapeLayer mask.
 ///
-/// Opening and closing only animate the mask path, on the render server at
-/// the display's native refresh rate; SwiftUI lays the content out once per
-/// state change, never per frame. The panel frame grows before an opening
-/// and shrinks after a closing, and since the container is pinned to the
-/// notch, resizing the window never moves what's on screen.
+/// Opening and closing only animate the mask path: a critically damped
+/// spring on the render server at the display's native refresh rate. SwiftUI
+/// lays content out once per state change and never animates geometry, and
+/// content anchored next to the notch never moves, so nothing can drift or
+/// jump. The panel grows before an opening and shrinks after a closing; the
+/// container is pinned to the notch, so resizing never moves what's shown.
 final class EarWindow {
     let panel = NotchPanel()
     private let side: NotchSide
@@ -49,15 +50,13 @@ final class EarWindow {
         container.frame = CGRect(
             x: side == .left ? content.bounds.width - width : 0, y: 0, width: width, height: geometry.height)
         mask.frame = CGRect(x: 0, y: 0, width: width, height: geometry.height)
-        mask.removeAllAnimations()
         mask.path = path(ear: ear)
         CATransaction.commit()
         place(ear: max(ear, visibleEar))
     }
 
-    func setEar(_ newEar: CGFloat, animated: Bool) {
+    func setEar(_ newEar: CGFloat, animated: Bool = true) {
         guard newEar != ear else { return }
-        let opening = newEar > ear
         ear = newEar
         shrinkTask?.cancel()
 
@@ -67,7 +66,7 @@ final class EarWindow {
         let target = path(ear: newEar)
         var settle: TimeInterval = 0
         if animated {
-            let spring = CASpringAnimation(perceptualDuration: opening ? 0.42 : 0.32, bounce: opening ? 0.2 : 0)
+            let spring = CASpringAnimation(perceptualDuration: Theme.earDuration, bounce: 0)
             spring.keyPath = "path"
             spring.fromValue = mask.presentation()?.path ?? mask.path
             spring.toValue = target
@@ -87,6 +86,12 @@ final class EarWindow {
             guard !Task.isCancelled, let self else { return }
             self.place(ear: self.ear)
         }
+    }
+
+    static func nativeFrameRate(for geometry: NotchGeometry?) -> CAFrameRateRange {
+        let screen = NSScreen.screens.first { $0.frame == geometry?.screenFrame } ?? NSScreen.main
+        let maximum = Float(max(60, screen?.maximumFramesPerSecond ?? 120))
+        return CAFrameRateRange(minimum: 60, maximum: maximum, preferred: maximum)
     }
 
     private func path(ear: CGFloat) -> CGPath {
@@ -110,12 +115,6 @@ final class EarWindow {
         }
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         if !panel.isVisible { panel.orderFrontRegardless() }
-    }
-
-    static func nativeFrameRate(for geometry: NotchGeometry?) -> CAFrameRateRange {
-        let screen = NSScreen.screens.first { $0.frame == geometry?.screenFrame } ?? NSScreen.main
-        let maximum = Float(max(60, screen?.maximumFramesPerSecond ?? 120))
-        return CAFrameRateRange(minimum: 60, maximum: maximum, preferred: maximum)
     }
 
     var contentView: NSView { container }
