@@ -12,7 +12,7 @@ final class SettingsWindowController {
         window.title = "Upthere Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 480, height: 560))
+        window.setContentSize(NSSize(width: 500, height: 680))
         window.center()
     }
 
@@ -31,6 +31,7 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var hooksInstalled = HookInstaller.isInstalled
     @State private var hookError: String?
+    @State private var statusLineInstalled = HookInstaller.isStatusLineInstalled
 
     var body: some View {
         Form {
@@ -114,6 +115,36 @@ struct SettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section {
+                usageRow("Session", isOn: $prefs.infoSession, format: $prefs.infoSessionFormat,
+                         percent: "% of 5-hour limit", amount: "Tokens this session")
+                usageRow("Week", isOn: $prefs.infoWeek, format: $prefs.infoWeekFormat,
+                         percent: "% of weekly limit", amount: "Tokens, last 7 days")
+                usageRow("Context window", isOn: $prefs.infoContext, format: $prefs.infoContextFormat,
+                         percent: "% used", amount: "Tokens")
+                Toggle("Session cost", isOn: $prefs.infoCost)
+                Toggle("Model", isOn: $prefs.infoModel)
+                Toggle("Show when limits reset", isOn: $prefs.infoResetTimes)
+                Picker("Ring around Claude icon", selection: $prefs.usageRing) {
+                    ForEach(UsageRing.allCases) { Text($0.title).tag($0) }
+                }
+                LabeledContent("Plan limits & cost") {
+                    if statusLineInstalled {
+                        Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Button("Disconnect") { runStatusLine(HookInstaller.uninstallStatusLine) }
+                    } else {
+                        Button("Connect status line") { runStatusLine(HookInstaller.installStatusLine) }
+                    }
+                }
+            } header: {
+                Text("Claude info")
+            } footer: {
+                Text(
+                    "Limits (%) and cost come from Claude Code's status line, so Upthere becomes the status line (your existing one keeps running after it). Limits are reported for Pro and Max plans after the first reply in a session. Token amounts are counted from local transcripts."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("Updates") {
                 Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
                 LabeledContent("Version \(updater.currentVersion)") {
@@ -127,8 +158,33 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 500, height: 680)
+    }
+
+    private func usageRow(
+        _ title: String, isOn: Binding<Bool>, format: Binding<UsageFormat>, percent: String, amount: String
+    ) -> some View {
+        HStack {
+            Toggle(title, isOn: isOn)
+            Spacer()
+            Picker(title, selection: format) {
+                Text(percent).tag(UsageFormat.percent)
+                Text(amount).tag(UsageFormat.amount)
+            }
+            .labelsHidden()
+            .fixedSize()
+            .disabled(!isOn.wrappedValue)
+        }
+    }
+
+    private func runStatusLine(_ action: () throws -> Void) {
+        do {
+            try action()
+            hookError = nil
+        } catch {
+            hookError = error.localizedDescription
+        }
+        statusLineInstalled = HookInstaller.isStatusLineInstalled
     }
 
     private var pinCandidates: [String] {

@@ -126,7 +126,7 @@ final class NotchViewModel {
         case .none: 0
         case .musicArt, .claudeGlyph: unit + 4
         case .musicInfo(let expanded): expanded ? 280 : 230
-        case .claudeDetail(let expanded): expanded ? 300 : 240
+        case .claudeDetail(let expanded): expanded ? 340 : 240
         }
     }
 
@@ -211,6 +211,14 @@ final class NotchViewModel {
             return session
         }
         return claude.primary
+    }
+
+    func usageChips(for session: ClaudeSession?) -> [UsageChip] {
+        UsageInfo.chips(for: session, plan: claude.planUsage, weeklyTokens: claude.weeklyTokens, prefs: prefs)
+    }
+
+    var usageRing: Double? {
+        UsageInfo.ringValue(for: selectedSession, plan: claude.planUsage, prefs: prefs)
     }
 
     func cycleSession(by offset: Int) {

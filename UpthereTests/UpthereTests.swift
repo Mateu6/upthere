@@ -165,3 +165,121 @@ struct HoverRegionTests {
         #expect(model.regionUnderCursor(at: CGPoint(x: 870, y: 900)) == nil)
     }
 }
+
+struct StatusLineTests {
+    static let json = #"{"session_id":"s1","session_name":"notch work","model":{"id":"claude-opus-5-5","display_name":"Opus"},"cost":{"total_cost_usd":1.234},"context_window":{"total_input_tokens":84000,"context_window_size":200000,"used_percentage":42},"rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":4102444800},"seven_day":{"used_percentage":81.2,"resets_at":4102444800}}}"#
+
+    @Test func parsesStatusLineEnvelope() throws {
+        let envelope = #"{"v":1,"kind":"statusline","payload":"# + Self.json + "}"
+        guard case .statusLine(let info) = ClaudeMessage.parse(Data(envelope.utf8)) else {
+            Issue.record("not a status line")
+            return
+        }
+        #expect(info.sessionName == "notch work")
+        #expect(info.modelName == "Opus")
+        #expect(info.contextPercent == 42)
+        #expect(info.fiveHour?.usedPercent == 23.5)
+        #expect(info.sevenDay?.usedPercent == 81.2)
+        #expect(info.costUSD == 1.234)
+    }
+
+    @Test func hookEnvelopesStillRouteToHooks() {
+        let envelope = #"{"v":1,"kind":null,"payload":{"hook_event_name":"Stop","session_id":"s1"}}"#
+        guard case .hook(let event) = ClaudeMessage.parse(Data(envelope.utf8)) else {
+            Issue.record("not a hook")
+            return
+        }
+        #expect(event.kind == .stop)
+    }
+
+    @Test func tokenFormatting() {
+        #expect(TokenFormat.short(950) == "950")
+        #expect(TokenFormat.short(12_300) == "12.3k")
+        #expect(TokenFormat.short(84_000) == "84k")
+        #expect(TokenFormat.short(250_000) == "250k")
+        #expect(TokenFormat.short(4_560_000) == "4.6M")
+        #expect(UsageInfo.shortModel("claude-opus-5-5") == "Opus 5.5")
+    }
+
+    @MainActor @Test func chipsFollowPreferences() {
+        let prefs = Preferences(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)
+        let info = StatusLineInfo(try! JSONSerialization.jsonObject(with: Data(Self.json.utf8)) as! [String: Any])!
+        var session = ClaudeSession(id: "s1")
+        session.status = info
+        session.transcript.sessionTokens = 1_500_000
+        let plan = PlanUsage(fiveHour: info.fiveHour, sevenDay: info.sevenDay, updated: .now)
+
+        prefs.infoResetTimes = false
+        var chips = UsageInfo.chips(for: session, plan: plan, weeklyTokens: 9_000_000, prefs: prefs)
+        #expect(chips.map(\.text) == ["5h 24%", "wk 81%", "ctx 42%"])
+        #expect(chips[1].level ?? 0 > 0.8)
+
+        prefs.infoSessionFormat = .amount
+        prefs.infoWeekFormat = .amount
+        prefs.infoContextFormat = .amount
+        prefs.infoCost = true
+        prefs.infoModel = true
+        chips = UsageInfo.chips(for: session, plan: plan, weeklyTokens: 9_000_000, prefs: prefs)
+        #expect(chips.map(\.text) == ["1.5M tok", "wk 9M", "ctx 84k", "$1.23", "Opus"])
+    }
+}
+
+struct StatusLineInstallerTests {
+    @Test func wrapsExistingStatusLineAndRestoresIt() {
+        let original: [String: Any] = ["type": "command", "command": "~/bin/my line.sh 'x'", "padding": 1]
+        let settings: [String: Any] = ["statusLine": original]
+        let (installed, saved) = HookInstaller.installingStatusLine(into: settings, helper: "\"/h/upthere-hook\"")
+        let command = (installed["statusLine"] as! [String: Any])["command"] as! String
+        #expect(command == #""/h/upthere-hook" statusline --then '~/bin/my line.sh '\''x'\'''"#)
+        #expect((installed["statusLine"] as! [String: Any])["padding"] as? Int == 1)
+        #expect(HookInstaller.isStatusLineInstalled(in: installed))
+
+        // Installing twice doesn't wrap twice.
+        let again = HookInstaller.installingStatusLine(into: installed, helper: "\"/h/upthere-hook\"")
+        #expect((again.settings["statusLine"] as! [String: Any])["command"] as? String == command)
+
+        let restored = HookInstaller.removingStatusLine(from: installed, original: saved)
+        #expect((restored["statusLine"] as! [String: Any])["command"] as? String == original["command"] as? String)
+    }
+
+    @Test func removesWhenThereWasNone() {
+        let (installed, saved) = HookInstaller.installingStatusLine(into: ["model": "opus"], helper: "/h/upthere-hook")
+        #expect(saved == nil)
+        let restored = HookInstaller.removingStatusLine(from: installed, original: saved)
+        #expect(restored["statusLine"] == nil)
+        #expect(restored["model"] as? String == "opus")
+    }
+}
+
+struct UsageScannerTests {
+    @Test func countsLastSevenDaysOncePerResponse() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("upthere-scan-\(UUID())")
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("p"), withIntermediateDirectories: true)
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func line(_ id: String, _ req: String, _ date: Date, _ tokens: Int) -> String {
+            #"{"type":"assistant","requestId":"\#(req)","timestamp":"\#(iso.string(from: date))","message":{"id":"\#(id)","usage":{"input_tokens":\#(tokens),"output_tokens":0}}}"#
+        }
+        let a = [
+            line("m1", "r1", now.addingTimeInterval(-3600), 100),
+            line("m1", "r1", now.addingTimeInterval(-3600), 100),  // second content block
+            line("m2", "r2", now.addingTimeInterval(-8 * 86400), 1000),  // too old
+            #"{"type":"user","message":{"content":"hi"}}"#,
+        ].joined(separator: "\n") + "\n"
+        let b = line("m1", "r1", now.addingTimeInterval(-3600), 100) + "\n"  // resumed copy
+            + line("m3", "r3", now.addingTimeInterval(-86400), 50) + "\n"
+        try a.write(to: dir.appendingPathComponent("p/a.jsonl"), atomically: true, encoding: .utf8)
+        try b.write(to: dir.appendingPathComponent("p/b.jsonl"), atomically: true, encoding: .utf8)
+
+        let scanner = UsageScanner(root: dir)
+        #expect(scanner.scanSync(now: now) == 150)
+
+        // Appended lines are picked up incrementally.
+        let handle = try FileHandle(forWritingTo: dir.appendingPathComponent("p/a.jsonl"))
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((line("m4", "r4", now, 7) + "\n").utf8))
+        try handle.close()
+        #expect(scanner.scanSync(now: now) == 157)
+    }
+}

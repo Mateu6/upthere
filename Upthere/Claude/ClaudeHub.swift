@@ -15,14 +15,14 @@ nonisolated final class ClaudeHub: @unchecked Sendable {
 
     private let path: String
     private let queue = DispatchQueue(label: "dev.upthere.claude-hub")
-    private let onEvent: @Sendable (HookEvent) -> Void
+    private let onMessage: @Sendable (ClaudeMessage) -> Void
     private var listenSource: DispatchSourceRead?
     private var clients: [Int32: (source: DispatchSourceRead, buffer: Data)] = [:]
     private static let maxMessageSize = 16 * 1024 * 1024
 
-    init(path: String = ClaudeHub.defaultSocketURL.path, onEvent: @escaping @Sendable (HookEvent) -> Void) {
+    init(path: String = ClaudeHub.defaultSocketURL.path, onMessage: @escaping @Sendable (ClaudeMessage) -> Void) {
         self.path = path
-        self.onEvent = onEvent
+        self.onMessage = onMessage
     }
 
     func start() throws {
@@ -116,7 +116,7 @@ nonisolated final class ClaudeHub: @unchecked Sendable {
     private func finish(_ fd: Int32, deliver: Bool) {
         guard let client = clients.removeValue(forKey: fd) else { return }
         client.source.cancel()
-        guard deliver, let event = HookEvent.parse(client.buffer) else { return }
-        onEvent(event)
+        guard deliver, let message = ClaudeMessage.parse(client.buffer) else { return }
+        onMessage(message)
     }
 }

@@ -31,8 +31,11 @@ struct ClaudeSession: Identifiable, Equatable {
     var transcript = TranscriptInfo()
     var terminalBundleID: String?
     var transcriptPath: String?
+    /// Latest status-line snapshot (needs the status-line bridge).
+    var status: StatusLineInfo?
 
     var projectName: String {
+        if let name = status?.sessionName, !name.isEmpty { return name }
         if let title = transcript.title, !title.isEmpty { return title }
         guard let cwd else { return "Claude" }
         return (cwd as NSString).lastPathComponent
@@ -61,8 +64,23 @@ struct ClaudeSession: Identifiable, Equatable {
 @Observable
 final class ClaudeModel {
     private(set) var sessions: [ClaudeSession] = []
+    /// Account-wide plan limits, from the newest status-line snapshot.
+    private(set) var planUsage: PlanUsage?
+    /// Tokens over the last 7 days from local transcripts (when enabled).
+    private(set) var weeklyTokens: Int?
+
+    /// Turn the background weekly scan on only when it's displayed.
+    var weeklyScanEnabled = false {
+        didSet {
+            guard weeklyScanEnabled != oldValue else { return }
+            if weeklyScanEnabled { startWeeklyScans() } else { weeklyTask?.cancel(); weeklyTask = nil }
+        }
+    }
 
     @ObservationIgnored private var hub: ClaudeHub?
+    @ObservationIgnored private let scanner = UsageScanner()
+    @ObservationIgnored private var weeklyTask: Task<Void, Never>?
+    @ObservationIgnored private var rescanTask: Task<Void, Never>?
     @ObservationIgnored private var tailers: [String: TranscriptTailer] = [:]
     @ObservationIgnored private var tailQueue = DispatchQueue(label: "dev.upthere.transcripts", qos: .utility)
     @ObservationIgnored private var doneTimers: [String: Task<Void, Never>] = [:]
@@ -92,8 +110,13 @@ final class ClaudeModel {
 
     func start() {
         guard hub == nil else { return }
-        let hub = ClaudeHub { event in
-            Task { @MainActor [weak self] in self?.handle(event) }
+        let hub = ClaudeHub { message in
+            Task { @MainActor [weak self] in
+                switch message {
+                case .hook(let event): self?.handle(event)
+                case .statusLine(let info): self?.handle(info)
+                }
+            }
         }
         do {
             try hub.start()
@@ -109,6 +132,49 @@ final class ClaudeModel {
         tailers.values.forEach { $0.stop() }
         tailers.removeAll()
         gcTask?.cancel()
+        weeklyTask?.cancel()
+    }
+
+    // MARK: Usage
+
+    func handle(_ info: StatusLineInfo) {
+        if info.fiveHour != nil || info.sevenDay != nil {
+            let usage = PlanUsage(fiveHour: info.fiveHour, sevenDay: info.sevenDay, updated: .now)
+            if planUsage != usage { planUsage = usage }
+        }
+        // Only enrich sessions the hooks know about; a status line alone
+        // doesn't make a session visible.
+        guard let index = sessions.firstIndex(where: { $0.id == info.sessionID }) else { return }
+        if sessions[index].status != info { sessions[index].status = info }
+    }
+
+    private func startWeeklyScans() {
+        weeklyTask?.cancel()
+        weeklyTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.rescanWeekly()
+                try? await Task.sleep(for: .seconds(15 * 60))
+            }
+        }
+    }
+
+    /// Debounced: bursts of Stop events trigger one scan.
+    private func scheduleWeeklyRescan() {
+        guard weeklyScanEnabled else { return }
+        rescanTask?.cancel()
+        rescanTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            self?.rescanWeekly()
+        }
+    }
+
+    private func rescanWeekly() {
+        scanner.scan { tokens in
+            Task { @MainActor [weak self] in
+                if self?.weeklyTokens != tokens { self?.weeklyTokens = tokens }
+            }
+        }
     }
 
     // MARK: Events
@@ -150,6 +216,7 @@ final class ClaudeModel {
         case .stop:
             session.activity = .done
             session.turnStarted = nil
+            scheduleWeeklyRescan()
         case .sessionEnd:
             remove(event.sessionID)
             return

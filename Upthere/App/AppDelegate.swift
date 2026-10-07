@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nowPlaying.start()
         if prefs.claudeEnabled { claude.start() }
         HookInstaller.refreshInstalledHelperIfNeeded()
+        syncClaudePreferences()
         updater.start()
 
         notch = NotchWindowController(
@@ -40,6 +41,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         nowPlaying.stop()
         claude.stop()
+    }
+
+    /// Runs the weekly transcript scan only while it's displayed.
+    private func syncClaudePreferences() {
+        claude.weeklyScanEnabled = withObservationTracking {
+            prefs.claudeEnabled && prefs.needsWeeklyTokenScan
+        } onChange: { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncClaudePreferences() } }
+        }
     }
 
     /// `kill`/logout send signals that skip applicationWillTerminate; route

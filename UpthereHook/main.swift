@@ -1,9 +1,16 @@
 // upthere-hook: forwards a Claude Code hook payload (stdin) to the Upthere app
-// over a Unix domain socket. It must never slow Claude down, so it:
+// over a Unix domain socket.
+//
+//   upthere-hook                         hook mode (prints nothing)
+//   upthere-hook statusline [--then CMD] status-line mode: forwards the JSON,
+//       then runs CMD (the user's previous status line) with the same input,
+//       or prints a compact line of its own.
+//
+// It must never slow Claude down, so it:
 //   - avoids Foundation (fast cold start),
 //   - gives up immediately if the app isn't listening,
 //   - caps the time spent writing,
-//   - always exits 0 and prints nothing.
+//   - always exits 0 (and prints nothing in hook mode).
 import Darwin
 
 func env(_ name: String) -> String? {
@@ -98,18 +105,89 @@ func writeAll(_ fd: Int32, _ bytes: [UInt8]) {
     }
 }
 
-let payload = readStdin()
-guard payload.first == UInt8(ascii: "{"), let path = socketPath(), let fd = connectSocket(path) else {
+/// Index just past the first occurrence of `needle` at or after `from`.
+func find(_ hay: [UInt8], _ needle: String, from: Int = 0) -> Int? {
+    let n = Array(needle.utf8)
+    guard !n.isEmpty, hay.count >= n.count else { return nil }
+    var i = from
+    while i <= hay.count - n.count {
+        if hay[i] == n[0] && Array(hay[i..<i + n.count]) == n { return i + n.count }
+        i += 1
+    }
+    return nil
+}
+
+/// The value after `"key":` inside `"section"` (no JSON parser needed).
+func rawValue(_ bytes: [UInt8], key: String, after section: String) -> [UInt8]? {
+    guard let s = find(bytes, "\"\(section)\""), var i = find(bytes, "\"\(key)\":", from: s) else { return nil }
+    while i < bytes.count && bytes[i] == UInt8(ascii: " ") { i += 1 }
+    var j = i
+    if j < bytes.count && bytes[j] == UInt8(ascii: "\"") {
+        j += 1
+        while j < bytes.count && bytes[j] != UInt8(ascii: "\"") { j += 1 }
+        return Array(bytes[(i + 1)..<j])
+    }
+    while j < bytes.count && (bytes[j] == UInt8(ascii: ".") || (bytes[j] >= 48 && bytes[j] <= 57)) { j += 1 }
+    return j > i ? Array(bytes[i..<j]) : nil
+}
+
+func percent(_ bytes: [UInt8], after section: String) -> Int? {
+    guard let raw = rawValue(bytes, key: "used_percentage", after: section) else { return nil }
+    let text = String(decoding: raw, as: UTF8.self)
+    return Int(text.split(separator: ".").first ?? "")
+}
+
+/// The default status line: model, context and plan usage.
+func summary(_ payload: [UInt8]) -> String {
+    var parts: [String] = []
+    if let model = rawValue(payload, key: "display_name", after: "model") {
+        parts.append(String(decoding: model, as: UTF8.self))
+    }
+    if let ctx = percent(payload, after: "context_window") { parts.append("ctx \(ctx)%") }
+    if let five = percent(payload, after: "five_hour") { parts.append("5h \(five)%") }
+    if let week = percent(payload, after: "seven_day") { parts.append("wk \(week)%") }
+    return parts.joined(separator: " · ")
+}
+
+func send(_ payload: [UInt8], kind: String?) {
+    guard payload.first == UInt8(ascii: "{"), let path = socketPath(), let fd = connectSocket(path) else { return }
+    // Envelope: the hook process inherits the terminal's environment, which
+    // tells the app which window to bring forward when the session is clicked.
+    var message = Array(
+        "{\"v\":1,\"kind\":\(jsonString(kind)),\"term\":\(jsonString(env("TERM_PROGRAM"))),\"bundle\":\(jsonString(env("__CFBundleIdentifier"))),\"ppid\":\(getppid()),\"payload\":"
+            .utf8)
+    message.append(contentsOf: payload)
+    message.append(contentsOf: Array("}\n".utf8))
+    writeAll(fd, message)
+    close(fd)
+}
+
+/// Replaces this process with `sh -c command`, feeding it `payload` on stdin.
+func chain(to command: String, payload: [UInt8]) -> Never {
+    var fds: [Int32] = [0, 0]
+    if pipe(&fds) == 0 {
+        writeAll(fds[1], payload)  // status-line JSON fits in the pipe buffer
+        close(fds[1])
+        dup2(fds[0], STDIN_FILENO)
+        close(fds[0])
+    }
+    let args = ["/bin/sh", "-c", command]
+    var cArgs = args.map { strdup($0) } + [nil]
+    execv("/bin/sh", &cArgs)
     exit(0)
 }
 
-// Envelope: the hook process inherits the terminal's environment, which tells
-// the app which window to bring forward when the session is clicked.
-var message = Array(
-    "{\"v\":1,\"term\":\(jsonString(env("TERM_PROGRAM"))),\"bundle\":\(jsonString(env("__CFBundleIdentifier"))),\"ppid\":\(getppid()),\"payload\":"
-        .utf8)
-message.append(contentsOf: payload)
-message.append(contentsOf: Array("}\n".utf8))
-writeAll(fd, message)
-close(fd)
+let arguments = CommandLine.arguments
+let payload = readStdin()
+
+if arguments.count > 1 && arguments[1] == "statusline" {
+    send(payload, kind: "statusline")
+    if arguments.count > 3 && arguments[2] == "--then" {
+        chain(to: arguments[3], payload: payload)
+    }
+    print(summary(payload))
+    exit(0)
+}
+
+send(payload, kind: nil)
 exit(0)

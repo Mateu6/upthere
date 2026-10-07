@@ -78,6 +78,72 @@ nonisolated enum HookInstaller {
         } ?? false
     }
 
+    // MARK: Status line bridge (plan limits, context, cost)
+
+    /// Claude Code only sends plan limits to status-line commands, so the
+    /// bridge becomes the status line. An existing one keeps working: the
+    /// helper forwards the data, then runs it (`--then`) with the same input.
+    static func isStatusLineInstalled(in settings: [String: Any]) -> Bool {
+        ((settings["statusLine"] as? [String: Any])?["command"] as? String)?.contains(marker) ?? false
+    }
+
+    /// Returns the new settings and the original `statusLine` (to restore).
+    static func installingStatusLine(into settings: [String: Any], helper: String)
+        -> (settings: [String: Any], original: [String: Any]?)
+    {
+        var settings = settings
+        let existing = settings["statusLine"] as? [String: Any]
+        if isStatusLineInstalled(in: settings) { return (settings, nil) }
+        var command = "\(helper) statusline"
+        if let previous = existing?["command"] as? String, !previous.isEmpty {
+            command += " --then " + shellQuote(previous)
+        }
+        var line = existing ?? [:]
+        line["type"] = "command"
+        line["command"] = command
+        settings["statusLine"] = line
+        return (settings, existing)
+    }
+
+    static func removingStatusLine(from settings: [String: Any], original: [String: Any]?) -> [String: Any] {
+        var settings = settings
+        guard isStatusLineInstalled(in: settings) else { return settings }
+        if let original { settings["statusLine"] = original } else { settings.removeValue(forKey: "statusLine") }
+        return settings
+    }
+
+    static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private static var originalStatusLineURL: URL {
+        installedHelperURL.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("statusline-original.json")
+    }
+
+    static var isStatusLineInstalled: Bool {
+        (try? isStatusLineInstalled(in: readSettings())) ?? false
+    }
+
+    static func installStatusLine() throws {
+        try copyHelper()
+        let (settings, original) = installingStatusLine(into: try readSettings(), helper: command)
+        let saved: Any = original ?? NSNull()
+        try JSONSerialization.data(withJSONObject: ["statusLine": saved]).write(to: originalStatusLineURL)
+        try write(settings)
+    }
+
+    static func uninstallStatusLine() throws {
+        var original: [String: Any]?
+        if let data = try? Data(contentsOf: originalStatusLineURL),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        {
+            original = object["statusLine"] as? [String: Any]
+        }
+        try write(removingStatusLine(from: try readSettings(), original: original))
+        try? FileManager.default.removeItem(at: originalStatusLineURL)
+    }
+
     // MARK: Disk
 
     static func readSettings() throws -> [String: Any] {

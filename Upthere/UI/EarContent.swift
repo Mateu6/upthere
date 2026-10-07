@@ -54,7 +54,7 @@ struct LeftEarContent: View {
                 .onTapGesture { music.activatePlayerApp() }
                 .transition(.blurReplace)
             case .spark:
-                ClaudeGlyph(session: model.selectedSession, size: h * 0.46)
+                ClaudeGlyph(session: model.selectedSession, size: h * 0.46, ring: model.usageRing)
                     .transition(.blurReplace)
             case nil:
                 EmptyView()
@@ -197,7 +197,7 @@ struct RightEarContent: View {
                 ClaudeBadge(model: model)
             case .claudeTool(let expanded):
                 if let session = model.selectedSession {
-                    ClaudeToolDetail(session: session, expanded: expanded)
+                    ClaudeToolDetail(session: session, expanded: expanded, chips: model.usageChips(for: session))
                 }
             }
         }

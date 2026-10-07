@@ -29,6 +29,29 @@ enum NotchTheme: String, CaseIterable, Identifiable {
     }
 }
 
+/// How a usage figure is shown.
+enum UsageFormat: String, CaseIterable, Identifiable {
+    case percent
+    case amount
+
+    var id: String { rawValue }
+}
+
+/// Which usage figure fills the ring around Claude's icon.
+enum UsageRing: String, CaseIterable, Identifiable {
+    case none, session, week, context
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .none: "None"
+        case .session: "Session limit (5-hour)"
+        case .week: "Weekly limit"
+        case .context: "Context window"
+        }
+    }
+}
+
 enum DisplayChoice: String, CaseIterable, Identifiable {
     case builtIn
     case main
@@ -60,6 +83,21 @@ final class Preferences {
     var scrollToSeek: Bool { didSet { save(scrollToSeek, "scrollToSeek") } }
     var scrollForVolume: Bool { didSet { save(scrollForVolume, "scrollForVolume") } }
 
+    // Claude info: what the agent ear shows.
+    var infoSession: Bool { didSet { save(infoSession, "infoSession") } }
+    var infoSessionFormat: UsageFormat { didSet { save(infoSessionFormat.rawValue, "infoSessionFormat") } }
+    var infoWeek: Bool { didSet { save(infoWeek, "infoWeek") } }
+    var infoWeekFormat: UsageFormat { didSet { save(infoWeekFormat.rawValue, "infoWeekFormat") } }
+    var infoContext: Bool { didSet { save(infoContext, "infoContext") } }
+    var infoContextFormat: UsageFormat { didSet { save(infoContextFormat.rawValue, "infoContextFormat") } }
+    var infoCost: Bool { didSet { save(infoCost, "infoCost") } }
+    var infoModel: Bool { didSet { save(infoModel, "infoModel") } }
+    var infoResetTimes: Bool { didSet { save(infoResetTimes, "infoResetTimes") } }
+    var usageRing: UsageRing { didSet { save(usageRing.rawValue, "usageRing") } }
+
+    /// The 7-day local token count is only computed when it's displayed.
+    var needsWeeklyTokenScan: Bool { infoWeek && infoWeekFormat == .amount }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         playerFilter = PlayerFilterMode(rawValue: defaults.string(forKey: "playerFilter") ?? "") ?? .excludeBrowsers
@@ -74,6 +112,16 @@ final class Preferences {
         theme = NotchTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .classic
         scrollToSeek = defaults.object(forKey: "scrollToSeek") as? Bool ?? true
         scrollForVolume = defaults.object(forKey: "scrollForVolume") as? Bool ?? true
+        infoSession = defaults.object(forKey: "infoSession") as? Bool ?? true
+        infoSessionFormat = UsageFormat(rawValue: defaults.string(forKey: "infoSessionFormat") ?? "") ?? .percent
+        infoWeek = defaults.object(forKey: "infoWeek") as? Bool ?? true
+        infoWeekFormat = UsageFormat(rawValue: defaults.string(forKey: "infoWeekFormat") ?? "") ?? .percent
+        infoContext = defaults.object(forKey: "infoContext") as? Bool ?? true
+        infoContextFormat = UsageFormat(rawValue: defaults.string(forKey: "infoContextFormat") ?? "") ?? .percent
+        infoCost = defaults.object(forKey: "infoCost") as? Bool ?? false
+        infoModel = defaults.object(forKey: "infoModel") as? Bool ?? false
+        infoResetTimes = defaults.object(forKey: "infoResetTimes") as? Bool ?? true
+        usageRing = UsageRing(rawValue: defaults.string(forKey: "usageRing") ?? "") ?? .none
     }
 
     private func save(_ value: Any?, _ key: String) {

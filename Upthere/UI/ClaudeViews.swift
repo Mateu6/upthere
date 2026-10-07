@@ -3,8 +3,21 @@ import SwiftUI
 struct ClaudeGlyph: View {
     let session: ClaudeSession?
     let size: CGFloat
+    /// Optional usage ring (0…1) around the icon.
+    var ring: Double? = nil
 
     var body: some View {
+        icon
+            .overlay {
+                if let ring {
+                    UsageRingView(value: ring, size: size + 9)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.smooth(duration: 0.3), value: ring != nil)
+    }
+
+    private var icon: some View {
         Group {
             switch session?.activity {
             case .done:
@@ -53,21 +66,30 @@ struct ClaudeDetail: View {
                             .padding(.horizontal, 4)
                             .background(Capsule().fill(.white.opacity(0.7)))
                     }
-                    Text(session.projectName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
+                    Text(expanded ? statusLine : session.projectName)
+                        .font(.system(size: expanded ? 11.5 : 12, weight: .semibold))
+                        .foregroundStyle(expanded ? statusColor == Theme.secondary ? .white : statusColor : .white)
                 }
-                HStack(spacing: 4) {
-                    if expanded {
+                if expanded {
+                    // Expanded: what it's doing, then elapsed time and usage.
+                    HStack(spacing: 4) {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)) + " ·")
+                            Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
                                 .monospacedDigit()
                         }
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.secondary)
+                        let chips = model.usageChips(for: session)
+                        if !chips.isEmpty {
+                            Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                            UsageChipsView(chips: chips)
+                        }
                     }
+                } else {
                     Text(statusLine)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(statusColor)
                 }
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(statusColor)
             }
             .lineLimit(1)
         }
@@ -99,6 +121,7 @@ struct ClaudeDetail: View {
 struct ClaudeToolDetail: View {
     let session: ClaudeSession
     let expanded: Bool
+    var chips: [UsageChip] = []
 
     var body: some View {
         HStack(spacing: 7) {
@@ -111,18 +134,18 @@ struct ClaudeToolDetail: View {
                 Text(primaryLine)
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.white)
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
                             .monospacedDigit()
                     }
-                    if expanded, let meta = metaLine {
-                        Text("·")
-                        Text(meta)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+                    if !chips.isEmpty {
+                        Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                        UsageChipsView(chips: chips)
                     }
                 }
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Theme.secondary)
             }
             .lineLimit(1)
             Spacer(minLength: 0)
@@ -138,17 +161,6 @@ struct ClaudeToolDetail: View {
         case .done: return session.transcript.lastText ?? "Finished"
         default: return session.transcript.lastText ?? session.statusText
         }
-    }
-
-    private var metaLine: String? {
-        var parts: [String] = []
-        if let model = session.transcript.model {
-            parts.append(model.replacingOccurrences(of: "claude-", with: ""))
-        }
-        if let tokens = session.transcript.contextTokens {
-            parts.append(tokens >= 1000 ? "\(tokens / 1000)k ctx" : "\(tokens) ctx")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

@@ -6,6 +6,9 @@ nonisolated struct TranscriptInfo: Sendable, Equatable {
     var model: String?
     var contextTokens: Int?
     var title: String?
+    /// Tokens this session has processed (input, cache reads/writes and
+    /// output), counting each API response once.
+    var sessionTokens = 0
 }
 
 /// Follows one session's JSONL transcript, reading only appended bytes.
@@ -20,8 +23,11 @@ nonisolated final class TranscriptTailer: @unchecked Sendable {
     private var offset: off_t = 0
     private var partial = Data()
     private var info = TranscriptInfo()
+    /// A response spans several lines (one per content block); count it once.
+    private var countedMessages: Set<String> = []
 
-    private static let initialTailBytes: off_t = 512 * 1024
+    /// Read the whole transcript once for session totals (bounded).
+    private static let initialTailBytes: off_t = 96 * 1024 * 1024
 
     init(url: URL, queue: DispatchQueue, onUpdate: @escaping @Sendable (TranscriptInfo) -> Void) {
         self.url = url
@@ -84,7 +90,7 @@ nonisolated final class TranscriptTailer: @unchecked Sendable {
         let before = info
         while let newline = partial.firstIndex(of: 0x0A) {
             let line = partial[partial.startIndex..<newline]
-            Self.apply(line: Data(line), to: &info)
+            Self.apply(line: Data(line), to: &info, counted: &countedMessages)
             partial.removeSubrange(partial.startIndex...newline)
         }
         if partial.count > 32 * 1024 * 1024 { partial.removeAll() }
@@ -98,6 +104,11 @@ nonisolated final class TranscriptTailer: @unchecked Sendable {
     /// Cheap byte search before JSON parsing: most lines (tool results,
     /// file contents) are irrelevant and can be large.
     static func apply(line: Data, to info: inout TranscriptInfo) {
+        var counted: Set<String> = []
+        apply(line: line, to: &info, counted: &counted)
+    }
+
+    static func apply(line: Data, to info: inout TranscriptInfo, counted: inout Set<String>) {
         let isAssistant = line.range(of: assistantMarker) != nil
         let isTitle = !isAssistant && (line.range(of: titleMarker) != nil || line.range(of: agentNameMarker) != nil)
         guard isAssistant || isTitle,
@@ -119,6 +130,10 @@ nonisolated final class TranscriptTailer: @unchecked Sendable {
             let keys = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
             let total = keys.compactMap { (usage[$0] as? NSNumber)?.intValue }.reduce(0, +)
             if total > 0 { info.contextTokens = total }
+            let id = message["id"] as? String ?? UUID().uuidString
+            if counted.insert(id).inserted {
+                info.sessionTokens += total + ((usage["output_tokens"] as? NSNumber)?.intValue ?? 0)
+            }
         }
         if let content = message["content"] as? [[String: Any]] {
             let texts = content.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
