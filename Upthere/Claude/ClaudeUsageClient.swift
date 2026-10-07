@@ -23,7 +23,7 @@ final class ClaudeUsageClient {
     private var token: (value: String, expiry: Date, plan: String?)?
 
     func fetch() async throws -> Result {
-        let login = try currentLogin()
+        let login = try await currentLogin()
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.setValue("Bearer \(login.value)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
@@ -60,9 +60,13 @@ final class ClaudeUsageClient {
         return withFraction.date(from: string) ?? ISO8601DateFormatter().date(from: string)
     }
 
-    private func currentLogin() throws -> (value: String, expiry: Date, plan: String?) {
+    private func currentLogin() async throws -> (value: String, expiry: Date, plan: String?) {
         if let token, token.expiry > .now.addingTimeInterval(60) { return token }
-        guard let data = Self.readKeychain() else { throw UsageError.noLogin }
+        // Off the main thread: macOS may show an "allow access" prompt, and
+        // the notch must keep working meanwhile.
+        guard let data = await Task.detached(priority: .utility, operation: { Self.readKeychain() }).value else {
+            throw UsageError.noLogin
+        }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let oauth = root["claudeAiOauth"] as? [String: Any],
             let access = oauth["accessToken"] as? String
@@ -75,7 +79,7 @@ final class ClaudeUsageClient {
         return login
     }
 
-    private static func readKeychain() -> Data? {
+    nonisolated private static func readKeychain() -> Data? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: "Claude Code-credentials",
