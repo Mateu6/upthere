@@ -171,13 +171,20 @@ struct SettingsView: View {
                          percent: "% of weekly limit", amount: "Tokens, last 7 days")
                 usageRow("Context window", isOn: $prefs.infoContext, format: $prefs.infoContextFormat,
                          percent: "% used", amount: "Tokens")
+                Toggle("Tokens until auto-compact", isOn: $prefs.infoAutoCompact)
+                Picker("Context window size", selection: $prefs.contextWindow) {
+                    ForEach(ContextWindowSize.allCases) { Text($0.title).tag($0) }
+                }
                 Toggle("Session cost", isOn: $prefs.infoCost)
                 Toggle("Model", isOn: $prefs.infoModel)
                 Toggle("Show when limits reset", isOn: $prefs.infoResetTimes)
                 Picker("Ring around Claude icon", selection: $prefs.usageRing) {
                     ForEach(UsageRing.allCases) { Text($0.title).tag($0) }
                 }
-                LabeledContent("Plan limits & cost") {
+                Toggle("Read plan limits from my Claude login", isOn: $prefs.accountUsage)
+                    .help("Reads the Claude Code login from your Keychain (macOS asks once) and asks api.anthropic.com for your usage, like the Claude app. Never changes the login.")
+                Toggle("Keep showing usage when Claude is idle", isOn: $prefs.showUsageWhenIdle)
+                LabeledContent("Status line (terminal only)") {
                     if statusLineInstalled {
                         Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         Button("Disconnect") { runStatusLine(HookInstaller.uninstallStatusLine) }
@@ -189,7 +196,7 @@ struct SettingsView: View {
                 Text("Claude info")
             } footer: {
                 Text(
-                    "Limits (%) and cost come from Claude Code's status line, so Upthere becomes the status line (your existing one keeps running after it). Limits are reported for Pro and Max plans after the first reply in a session. Token amounts are counted from local transcripts."
+                    "Plan limits come from your Claude login (same numbers as the Claude app; the endpoint is undocumented and may change) or, for Claude Code in a terminal, its status line. Token amounts are counted from local transcripts."
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }

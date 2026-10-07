@@ -63,6 +63,26 @@ enum UsageRing: String, CaseIterable, Identifiable {
     }
 }
 
+enum ContextWindowSize: String, CaseIterable, Identifiable {
+    case auto, k200, m1
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .auto: "Automatic"
+        case .k200: "200k"
+        case .m1: "1M"
+        }
+    }
+    var tokens: Int? {
+        switch self {
+        case .auto: nil
+        case .k200: 200_000
+        case .m1: 1_000_000
+        }
+    }
+}
+
 enum DisplayChoice: String, CaseIterable, Identifiable {
     case builtIn
     case main
@@ -117,6 +137,12 @@ final class Preferences {
     var infoModel: Bool { didSet { save(infoModel, "infoModel") } }
     var infoResetTimes: Bool { didSet { save(infoResetTimes, "infoResetTimes") } }
     var usageRing: UsageRing { didSet { save(usageRing.rawValue, "usageRing") } }
+    /// Read plan limits with the Claude login (usage endpoint).
+    var accountUsage: Bool { didSet { save(accountUsage, "accountUsage") } }
+    /// Keep the Claude ear (ring + limits) visible when no session is active.
+    var showUsageWhenIdle: Bool { didSet { save(showUsageWhenIdle, "showUsageWhenIdle") } }
+    var contextWindow: ContextWindowSize { didSet { save(contextWindow.rawValue, "contextWindow") } }
+    var infoAutoCompact: Bool { didSet { save(infoAutoCompact, "infoAutoCompact") } }
 
     /// The 7-day local token count is only computed when it's displayed.
     var needsWeeklyTokenScan: Bool { infoWeek && infoWeekFormat == .amount }
@@ -151,7 +177,11 @@ final class Preferences {
         infoCost = defaults.object(forKey: "infoCost") as? Bool ?? false
         infoModel = defaults.object(forKey: "infoModel") as? Bool ?? false
         infoResetTimes = defaults.object(forKey: "infoResetTimes") as? Bool ?? true
-        usageRing = UsageRing(rawValue: defaults.string(forKey: "usageRing") ?? "") ?? .none
+        usageRing = UsageRing(rawValue: defaults.string(forKey: "usageRing") ?? "") ?? .session
+        accountUsage = defaults.object(forKey: "accountUsage") as? Bool ?? false
+        showUsageWhenIdle = defaults.object(forKey: "showUsageWhenIdle") as? Bool ?? false
+        contextWindow = ContextWindowSize(rawValue: defaults.string(forKey: "contextWindow") ?? "") ?? .auto
+        infoAutoCompact = defaults.object(forKey: "infoAutoCompact") as? Bool ?? true
     }
 
     private func save(_ value: Any?, _ key: String) {

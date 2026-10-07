@@ -8,7 +8,10 @@ nonisolated enum ClaudeActivity: Equatable, Sendable {
     case idle
     case thinking
     case tool(name: String, detail: String?)
-    case waiting(message: String?)
+    /// Claude wants to run a tool and needs your approval.
+    case permission(tool: String?, detail: String?)
+    /// Claude is asking you something (a question, a plan to review, a form).
+    case input(prompt: String?)
     case compacting
     case done
 
@@ -18,6 +21,16 @@ nonisolated enum ClaudeActivity: Equatable, Sendable {
         default: false
         }
     }
+
+    var needsUser: Bool {
+        switch self {
+        case .permission, .input: true
+        default: false
+        }
+    }
+
+    /// Tools that are really Claude asking you something.
+    static let inputTools: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
 }
 
 struct ClaudeSession: Identifiable, Equatable {
@@ -46,17 +59,19 @@ struct ClaudeSession: Identifiable, Equatable {
         case .idle: "Idle"
         case .thinking: "Thinking…"
         case .tool(let name, _): ToolInfo.displayName(name)
-        case .waiting(let message): Self.shortWaitingText(message)
+        case .permission(let tool?, _): "Allow \(ToolInfo.displayName(tool))?"
+        case .permission: "Needs permission"
+        case .input: "Needs your input"
         case .compacting: "Compacting…"
         case .done: "Done"
         }
     }
 
-    static func shortWaitingText(_ message: String?) -> String {
-        guard let message, !message.isEmpty else { return "Needs you" }
-        if message.localizedCaseInsensitiveContains("permission") { return "Needs permission" }
-        if message.localizedCaseInsensitiveContains("waiting for your input") { return "Waiting for input" }
-        return message
+    /// "Claude needs your permission to use Bash" → "Bash".
+    static func toolName(fromPermissionMessage message: String?) -> String? {
+        guard let message, let range = message.range(of: "permission to use ") else { return nil }
+        let name = message[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return name.isEmpty ? nil : name
     }
 }
 
@@ -64,8 +79,19 @@ struct ClaudeSession: Identifiable, Equatable {
 @Observable
 final class ClaudeModel {
     private(set) var sessions: [ClaudeSession] = []
-    /// Account-wide plan limits, from the newest status-line snapshot.
+    /// Account-wide plan limits: from the Claude login (usage endpoint) or
+    /// the newest status-line snapshot, whichever is newer.
     private(set) var planUsage: PlanUsage?
+    /// "Pro", "Max", … when known from the Claude login.
+    private(set) var planName: String?
+
+    /// Poll the usage endpoint with the Claude login (opt-in).
+    var accountUsageEnabled = false {
+        didSet {
+            guard accountUsageEnabled != oldValue else { return }
+            if accountUsageEnabled { startUsagePolling() } else { usageTask?.cancel(); usageTask = nil }
+        }
+    }
     /// Tokens over the last 7 days from local transcripts (when enabled).
     private(set) var weeklyTokens: Int?
 
@@ -79,6 +105,9 @@ final class ClaudeModel {
 
     @ObservationIgnored private var hub: ClaudeHub?
     @ObservationIgnored private let scanner = UsageScanner()
+    @ObservationIgnored private let usageClient = ClaudeUsageClient()
+    @ObservationIgnored private var usageTask: Task<Void, Never>?
+    @ObservationIgnored private var usageRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var weeklyTask: Task<Void, Never>?
     @ObservationIgnored private var rescanTask: Task<Void, Never>?
     @ObservationIgnored private var tailers: [String: TranscriptTailer] = [:]
@@ -97,8 +126,9 @@ final class ClaudeModel {
 
     var isLive: Bool { !visibleSessions.isEmpty }
 
+    /// A session that needs you: permission or input.
     var attention: ClaudeSession? {
-        sessions.first { if case .waiting = $0.activity { true } else { false } }
+        sessions.first { $0.activity.needsUser }
     }
 
     /// The session the collapsed notch represents.
@@ -133,6 +163,7 @@ final class ClaudeModel {
         tailers.removeAll()
         gcTask?.cancel()
         weeklyTask?.cancel()
+        usageTask?.cancel()
     }
 
     // MARK: Usage
@@ -146,6 +177,33 @@ final class ClaudeModel {
         // doesn't make a session visible.
         guard let index = sessions.firstIndex(where: { $0.id == info.sessionID }) else { return }
         if sessions[index].status != info { sessions[index].status = info }
+    }
+
+    private func startUsagePolling() {
+        usageTask?.cancel()
+        usageTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.fetchAccountUsage()
+                try? await Task.sleep(for: .seconds(5 * 60))
+            }
+        }
+    }
+
+    /// After a reply the numbers have moved; refresh soon (debounced).
+    private func scheduleUsageRefresh() {
+        guard accountUsageEnabled else { return }
+        usageRefreshTask?.cancel()
+        usageRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled else { return }
+            await self?.fetchAccountUsage()
+        }
+    }
+
+    private func fetchAccountUsage() async {
+        guard let result = try? await usageClient.fetch() else { return }
+        if planUsage != result.usage { planUsage = result.usage }
+        if let plan = result.plan, planName != plan { planName = plan }
     }
 
     private func startWeeklyScans() {
@@ -194,21 +252,27 @@ final class ClaudeModel {
             session.activity = .thinking
             session.turnStarted = .now
         case .preToolUse:
-            session.activity = .tool(name: event.toolName ?? "Tool", detail: event.toolDetail)
+            if let tool = event.toolName, ClaudeActivity.inputTools.contains(tool) {
+                session.activity = .input(prompt: event.question)
+            } else {
+                session.activity = .tool(name: event.toolName ?? "Tool", detail: event.toolDetail)
+            }
         case .postToolUse, .subagentStop:
             if previous != .done && previous != .idle { session.activity = .thinking }
         case .permissionRequest:
-            session.activity = .waiting(message: "Needs permission")
+            session.activity = Self.permissionActivity(previous: previous, message: event.message, tool: event.toolName)
         case .notification:
             switch event.notificationType {
             case "idle_prompt", "auth_success":
                 break
-            case "permission_prompt", "elicitation_dialog":
-                session.activity = .waiting(message: event.message)
+            case "elicitation_dialog":
+                session.activity = .input(prompt: event.message)
+            case "permission_prompt":
+                session.activity = Self.permissionActivity(previous: previous, message: event.message, tool: nil)
             default:
                 // Older Claude Code versions don't send notification_type.
                 if event.message?.localizedCaseInsensitiveContains("permission") == true {
-                    session.activity = .waiting(message: event.message)
+                    session.activity = Self.permissionActivity(previous: previous, message: event.message, tool: nil)
                 }
             }
         case .preCompact:
@@ -217,6 +281,7 @@ final class ClaudeModel {
             session.activity = .done
             session.turnStarted = nil
             scheduleWeeklyRescan()
+            scheduleUsageRefresh()
         case .sessionEnd:
             remove(event.sessionID)
             return
@@ -230,6 +295,20 @@ final class ClaudeModel {
         ensureTailer(for: session)
         scheduleDoneFade(for: session)
         scheduleGC()
+    }
+
+    /// A permission prompt for one of Claude's question tools is really a
+    /// request for input; otherwise it's about the tool that was running.
+    private static func permissionActivity(previous: ClaudeActivity, message: String?, tool: String?) -> ClaudeActivity {
+        switch previous {
+        case .input:
+            return previous
+        case .tool(let name, let detail):
+            if ClaudeActivity.inputTools.contains(name) { return .input(prompt: detail) }
+            return .permission(tool: tool ?? name, detail: detail)
+        default:
+            return .permission(tool: tool ?? ClaudeSession.toolName(fromPermissionMessage: message), detail: nil)
+        }
     }
 
     private func upsert(_ session: ClaudeSession) {

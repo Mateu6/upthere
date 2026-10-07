@@ -138,7 +138,11 @@ final class NotchViewModel {
     var content: (left: LeftContent, right: RightContent) {
         let l = effectiveLeftMode
         let r = rightMode
-        let agents = prefs.claudeEnabled && claude.isLive
+        let sessionsLive = prefs.claudeEnabled && claude.isLive
+        // With "show usage when idle", the Claude ear stays (ring + limits).
+        let usageOnly = !sessionsLive && prefs.claudeEnabled && prefs.showUsageWhenIdle
+            && claude.planUsage.map { $0.current().fiveHour != nil || $0.current().sevenDay != nil } == true
+        let agents = sessionsLive || usageOnly
         // An open music ear keeps showing a paused/pinned player.
         let musicEarOpen = agents ? r != .collapsed : (l != .collapsed || r != .collapsed)
         let music = nowPlaying.isLive || (musicEarOpen && nowPlaying.current != nil)
@@ -155,6 +159,7 @@ final class NotchViewModel {
                 r == .collapsed ? .musicBars : .musicControls(expanded: r == .expanded)
             )
         case (false, true):
+            if usageOnly { return (claudeLeft, .none) }
             return (claudeLeft, r == .collapsed ? .claudeBadge : .claudeTool(expanded: r == .expanded))
         case (true, true):
             return (claudeLeft, r == .collapsed ? .musicCompact : .musicFull(expanded: r == .expanded))
@@ -250,6 +255,10 @@ final class NotchViewModel {
         Theme.amber, NSColor(srgbRed: 1.0, green: 0.55, blue: 0.2, alpha: 1),
         NSColor(srgbRed: 1.0, green: 0.86, blue: 0.4, alpha: 1),
     ]
+    static let inputPalette = [
+        Theme.input, NSColor(srgbRed: 0.55, green: 0.5, blue: 1.0, alpha: 1),
+        NSColor(srgbRed: 0.4, green: 0.82, blue: 1.0, alpha: 1),
+    ]
     static let neutralPalette = [NSColor(white: 0.9, alpha: 1), NSColor(white: 0.75, alpha: 1), NSColor(white: 0.6, alpha: 1)]
 
     var musicPalette: [NSColor] { nowPlaying.artwork?.palette ?? Self.neutralPalette }
@@ -260,7 +269,11 @@ final class NotchViewModel {
         let music = showsMusic(side) || (side == .left && !claudeShown && showsMusic(.right))
             || (side == .right && !claudeShown && showsMusic(.left))
         if music { return musicPalette }
-        return claude.attention != nil ? Self.attentionPalette : Self.claudePalette
+        switch claude.attention?.activity {
+        case .permission: return Self.attentionPalette
+        case .input: return Self.inputPalette
+        default: return Self.claudePalette
+        }
     }
 
     private var claudeShown: Bool {

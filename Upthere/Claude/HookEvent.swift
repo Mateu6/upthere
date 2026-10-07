@@ -23,8 +23,22 @@ nonisolated struct HookEvent: Sendable, Equatable {
     var toolDetail: String?
     var message: String?
     var notificationType: String?
+    /// What Claude asks, for AskUserQuestion / ExitPlanMode.
+    var question: String?
     var terminalBundleID: String?
     var terminalProgram: String?
+
+    static func question(tool: String?, input: [String: Any]?) -> String? {
+        switch tool {
+        case "AskUserQuestion":
+            let questions = input?["questions"] as? [[String: Any]]
+            return (questions?.first?["question"] as? String) ?? (input?["question"] as? String)
+        case "ExitPlanMode":
+            return "Plan ready for review"
+        default:
+            return nil
+        }
+    }
 
     /// Parses the envelope `{"v":1,"term":…,"bundle":…,"payload":{…}}`.
     /// A bare hook payload (no envelope) is accepted too, for testing.
@@ -46,6 +60,7 @@ nonisolated struct HookEvent: Sendable, Equatable {
             toolDetail: toolName.flatMap { ToolInfo.detail(tool: $0, input: toolInput ?? [:]) },
             message: payload["message"] as? String,
             notificationType: payload["notification_type"] as? String,
+            question: Self.question(tool: toolName, input: toolInput),
             terminalBundleID: root["bundle"] as? String,
             terminalProgram: root["term"] as? String
         )

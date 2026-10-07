@@ -211,7 +211,7 @@ struct StatusLineTests {
 
         prefs.infoResetTimes = false
         var chips = UsageInfo.chips(for: session, plan: plan, weeklyTokens: 9_000_000, prefs: prefs)
-        #expect(chips.map(\.text) == ["5h 24%", "wk 81%", "ctx 42%"])
+        #expect(chips.map(\.text) == ["session 24%", "week 81%", "ctx 42%", "81.6k to compact"])
         #expect(chips[1].level ?? 0 > 0.8)
 
         prefs.infoSessionFormat = .amount
@@ -220,7 +220,7 @@ struct StatusLineTests {
         prefs.infoCost = true
         prefs.infoModel = true
         chips = UsageInfo.chips(for: session, plan: plan, weeklyTokens: 9_000_000, prefs: prefs)
-        #expect(chips.map(\.text) == ["1.5M tok", "wk 9M", "ctx 84k", "$1.23", "Opus"])
+        #expect(chips.map(\.text) == ["1.5M tok", "wk 9M", "ctx 84k", "81.6k to compact", "$1.23", "Opus"])
     }
 }
 
@@ -334,5 +334,51 @@ struct UpNextTests {
         let items = MusicQueue.parse("One\tArtist 1\nTwo\tArtist 2\n")
         #expect(items.map(\.title) == ["One", "Two"])
         #expect(items[1].artist == "Artist 2" && items[1].position == 1)
+    }
+}
+
+@MainActor
+struct AttentionTests {
+    private func send(_ model: ClaudeModel, _ name: String, extra: String = "") {
+        let json = #"{"hook_event_name":"\#(name)","session_id":"s1","cwd":"/p"\#(extra)}"#
+        model.handle(HookEvent.parse(Data(json.utf8))!)
+    }
+
+    @Test func permissionAndInputAreDistinct() {
+        let model = ClaudeModel()
+        send(model, "UserPromptSubmit")
+        send(model, "PreToolUse", extra: #","tool_name":"Bash","tool_input":{"command":"rm -rf build"}"#)
+        send(model, "Notification", extra: #","message":"Claude needs your permission to use Bash","notification_type":"permission_prompt""#)
+        #expect(model.primary?.activity == .permission(tool: "Bash", detail: "rm -rf build"))
+        #expect(model.primary?.statusText == "Allow Bash?")
+
+        send(model, "PostToolUse", extra: #","tool_name":"Bash""#)
+        send(model, "PreToolUse", extra: #","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which theme?"}]}"#)
+        #expect(model.primary?.activity == .input(prompt: "Which theme?"))
+        // A permission prompt for the question tool stays an input request.
+        send(model, "Notification", extra: #","message":"Claude needs your permission to use AskUserQuestion","notification_type":"permission_prompt""#)
+        #expect(model.primary?.activity == .input(prompt: "Which theme?"))
+        #expect(model.attention != nil)
+
+        send(model, "Notification", extra: #","message":"Claude has a question","notification_type":"elicitation_dialog""#)
+        #expect(model.primary?.activity == .input(prompt: "Which theme?") || model.primary?.activity == .input(prompt: "Claude has a question"))
+    }
+
+    @Test func parsesUsageEndpoint() {
+        let json = #"{"five_hour":{"utilization":15.0,"resets_at":"2099-01-01T10:00:00.000+00:00"},"seven_day":{"utilization":28.0,"resets_at":"2099-01-05T06:00:00+00:00"},"seven_day_opus":null}"#
+        let usage = ClaudeUsageClient.parse(Data(json.utf8))
+        #expect(usage?.fiveHour?.usedPercent == 15)
+        #expect(usage?.sevenDay?.usedPercent == 28)
+        #expect(ClaudeUsageClient.parse(Data("{}".utf8)) == nil)
+    }
+
+    @Test func contextSizeInferenceAndAutoCompact() {
+        let prefs = Preferences(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)
+        var session = ClaudeSession(id: "s")
+        session.transcript.contextTokens = 755_600
+        #expect(UsageInfo.contextSize(session, prefs: prefs) == 1_000_000)
+        prefs.infoResetTimes = false
+        let chips = UsageInfo.chips(for: session, plan: nil, weeklyTokens: nil, prefs: prefs)
+        #expect(chips.map(\.text) == ["ctx 76%", "210k to compact"])
     }
 }

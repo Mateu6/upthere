@@ -7,6 +7,8 @@ enum Theme {
     static let earDuration: Double = 0.34
     static let claude = NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1)
     static let amber = NSColor(srgbRed: 1.0, green: 0.74, blue: 0.24, alpha: 1)
+    /// Claude is asking you something (vs. amber: asking for permission).
+    static let input = NSColor(srgbRed: 0.45, green: 0.66, blue: 1.0, alpha: 1)
     static let secondary = Color.white.opacity(0.58)
     static let earRadius: CGFloat = 10
     /// Concave flare where an ear meets the screen's top edge.

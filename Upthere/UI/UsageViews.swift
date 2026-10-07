@@ -23,7 +23,7 @@ enum UsageInfo {
             switch prefs.infoSessionFormat {
             case .percent:
                 if let window = plan?.fiveHour {
-                    chips.append(limitChip("session", label: "5h", window: window, prefs: prefs, now: now))
+                    chips.append(limitChip("session", label: "session", window: window, prefs: prefs, now: now))
                 }
             case .amount:
                 if let tokens = session?.transcript.sessionTokens, tokens > 0 {
@@ -35,7 +35,7 @@ enum UsageInfo {
             switch prefs.infoWeekFormat {
             case .percent:
                 if let window = plan?.sevenDay {
-                    chips.append(limitChip("week", label: "wk", window: window, prefs: prefs, now: now))
+                    chips.append(limitChip("week", label: "week", window: window, prefs: prefs, now: now))
                 }
             case .amount:
                 if let weeklyTokens {
@@ -47,12 +47,17 @@ enum UsageInfo {
             let tokens = session.status?.contextTokens ?? session.transcript.contextTokens
             switch prefs.infoContextFormat {
             case .percent:
-                if let percent = contextFraction(session) {
+                if let percent = contextFraction(session, prefs: prefs) {
                     chips.append(UsageChip(id: "context", text: "ctx \(Int((percent * 100).rounded()))%", level: percent))
                 }
             case .amount:
                 if let tokens { chips.append(UsageChip(id: "context", text: "ctx \(TokenFormat.short(tokens))")) }
             }
+        }
+        if prefs.infoAutoCompact, let session, let tokens = session.status?.contextTokens ?? session.transcript.contextTokens {
+            let left = max(0, autoCompactThreshold(contextSize(session, prefs: prefs)) - tokens)
+            let fraction = Double(tokens) / Double(max(1, autoCompactThreshold(contextSize(session, prefs: prefs))))
+            chips.append(UsageChip(id: "compact", text: "\(TokenFormat.short(left)) to compact", level: fraction))
         }
         if prefs.infoCost, let cost = session?.status?.costUSD {
             chips.append(UsageChip(id: "cost", text: cost < 10 ? String(format: "$%.2f", cost) : String(format: "$%.0f", cost)))
@@ -70,15 +75,27 @@ enum UsageInfo {
         case .none: return nil
         case .session: return plan?.fiveHour.map { $0.usedPercent / 100 }
         case .week: return plan?.sevenDay.map { $0.usedPercent / 100 }
-        case .context: return session.flatMap(contextFraction)
+        case .context: return session.flatMap { contextFraction($0, prefs: prefs) }
         }
     }
 
-    static func contextFraction(_ session: ClaudeSession) -> Double? {
+    static func contextFraction(_ session: ClaudeSession, prefs: Preferences) -> Double? {
         if let percent = session.status?.contextPercent { return percent / 100 }
         guard let tokens = session.transcript.contextTokens else { return nil }
-        return Double(tokens) / Double(session.status?.contextSize ?? defaultContextSize)
+        return Double(tokens) / Double(contextSize(session, prefs: prefs))
     }
+
+    /// The session's context window: from the status line, the setting, or
+    /// inferred (more than 200k in use means a 1M window).
+    static func contextSize(_ session: ClaudeSession, prefs: Preferences) -> Int {
+        if let size = session.status?.contextSize { return size }
+        if let size = prefs.contextWindow.tokens { return size }
+        return (session.transcript.contextTokens ?? 0) > defaultContextSize ? 1_000_000 : defaultContextSize
+    }
+
+    /// Claude Code compacts about 34k tokens before the window is full
+    /// (e.g. 965.6k of 1M, 166k of 200k).
+    static func autoCompactThreshold(_ size: Int) -> Int { size - 34_400 }
 
     private static func limitChip(_ id: String, label: String, window: LimitWindow, prefs: Preferences, now: Date) -> UsageChip {
         var text = "\(label) \(Int(window.usedPercent.rounded()))%"
@@ -86,12 +103,15 @@ enum UsageInfo {
         return UsageChip(id: id, text: text, level: window.usedPercent / 100)
     }
 
-    /// "45m", "3h", "2d".
+    /// Like the Claude app: "45m", "4h 50m", then the weekday ("Mon").
     static func remaining(until date: Date, now: Date) -> String {
         let seconds = max(0, date.timeIntervalSince(now))
         if seconds < 3600 { return "\(Int(seconds / 60))m" }
-        if seconds < 48 * 3600 { return "\(Int((seconds / 3600).rounded()))h" }
-        return "\(Int((seconds / 86400).rounded()))d"
+        if seconds < 24 * 3600 {
+            let minutes = Int(seconds / 60)
+            return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
+        }
+        return date.formatted(.dateTime.weekday(.abbreviated))
     }
 
     /// "claude-opus-5-5" → "Opus 5.5".
@@ -149,5 +169,24 @@ struct UsageRingView: View {
         }
         .frame(width: size, height: size)
         .animation(.smooth(duration: 0.4), value: value)
+    }
+}
+
+/// The agent ear with no active session: just your plan usage.
+struct UsageSummary: View {
+    let model: NotchViewModel
+
+    var body: some View {
+        let chips = model.usageChips(for: nil)
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(model.claude.planName.map { "Claude \($0)" } ?? "Claude")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                UsageChipsView(chips: chips)
+            }
+            .lineLimit(1)
+        }
     }
 }

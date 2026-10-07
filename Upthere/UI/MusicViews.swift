@@ -65,16 +65,13 @@ struct TrackText: View {
     var alignment: HorizontalAlignment = .leading
 
     var body: some View {
+        let frame: Alignment = alignment == .trailing ? .trailing : .leading
         VStack(alignment: alignment, spacing: 0) {
-            Text(snapshot.title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-            Text(showAlbum && !snapshot.album.isEmpty ? "\(snapshot.artist) — \(snapshot.album)" : snapshot.artist)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(Theme.secondary)
+            MarqueeText(text: snapshot.title, font: .system(size: 12, weight: .semibold), alignment: frame)
+            MarqueeText(
+                text: showAlbum && !snapshot.album.isEmpty ? "\(snapshot.artist) — \(snapshot.album)" : snapshot.artist,
+                font: .system(size: 10.5, weight: .medium), color: Theme.secondary, alignment: frame)
         }
-        .lineLimit(1)
-        .truncationMode(.tail)
     }
 }
 

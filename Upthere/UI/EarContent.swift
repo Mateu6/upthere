@@ -83,6 +83,10 @@ struct LeftEarContent: View {
                     ClaudeDetail(model: model, session: session, expanded: expanded)
                         .padding(.leading, 8)
                         .padding(.trailing, h + 4)
+                } else {
+                    UsageSummary(model: model)
+                        .padding(.leading, 8)
+                        .padding(.trailing, h + 4)
                 }
             case .queue:
                 QueueStrip(model: model)

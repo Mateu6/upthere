@@ -49,11 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Runs the weekly transcript scan only while it's displayed.
     private func syncClaudePreferences() {
-        claude.weeklyScanEnabled = withObservationTracking {
-            prefs.claudeEnabled && prefs.needsWeeklyTokenScan
+        let (weekly, account) = withObservationTracking {
+            (prefs.claudeEnabled && prefs.needsWeeklyTokenScan, prefs.claudeEnabled && prefs.accountUsage)
         } onChange: { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncClaudePreferences() } }
         }
+        claude.weeklyScanEnabled = weekly
+        claude.accountUsageEnabled = account
     }
 
     /// Taps the player's audio only while music plays with the live

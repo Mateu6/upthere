@@ -25,8 +25,10 @@ struct ClaudeGlyph: View {
                     .font(.system(size: size * 0.95, weight: .semibold))
                     .foregroundStyle(.green)
                     .transition(.scale.combined(with: .opacity))
-            case .waiting:
+            case .permission:
                 ClaudeSparkView(style: .waiting, color: Theme.amber)
+            case .input:
+                ClaudeSparkView(style: .waiting, color: Theme.input)
             case .some(let activity) where activity.isWorking:
                 ClaudeSparkView(style: .working, color: Theme.claude)
             default:
@@ -66,9 +68,11 @@ struct ClaudeDetail: View {
                             .padding(.horizontal, 4)
                             .background(Capsule().fill(.white.opacity(0.7)))
                     }
-                    Text(expanded ? statusLine : session.projectName)
-                        .font(.system(size: expanded ? 11.5 : 12, weight: .semibold))
-                        .foregroundStyle(expanded ? statusColor == Theme.secondary ? .white : statusColor : .white)
+                    MarqueeText(
+                        text: expanded ? statusLine : session.projectName,
+                        font: .system(size: expanded ? 11.5 : 12, weight: .semibold),
+                        color: expanded && statusColor != Theme.secondary ? statusColor : .white,
+                        alignment: .trailing)
                 }
                 if expanded {
                     // Expanded: what it's doing, then elapsed time and usage.
@@ -86,9 +90,9 @@ struct ClaudeDetail: View {
                         }
                     }
                 } else {
-                    Text(statusLine)
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(statusColor)
+                    MarqueeText(
+                        text: statusLine, font: .system(size: 10.5, weight: .medium), color: statusColor,
+                        alignment: .trailing)
                 }
             }
             .lineLimit(1)
@@ -96,13 +100,19 @@ struct ClaudeDetail: View {
     }
 
     private var statusLine: String {
-        if case .tool(_, let detail?) = session.activity { return "\(session.statusText) · \(detail)" }
-        return session.statusText
+        switch session.activity {
+        case .tool(_, let detail?), .permission(_, let detail?): return "\(session.statusText) · \(detail)"
+        case .input(let prompt?): return prompt
+        default: return session.statusText
+        }
     }
 
     private var statusColor: Color {
-        if case .waiting = session.activity { return Color(nsColor: Theme.amber) }
-        return Theme.secondary
+        switch session.activity {
+        case .permission: Color(nsColor: Theme.amber)
+        case .input: Color(nsColor: Theme.input)
+        default: Theme.secondary
+        }
     }
 
     private func pagerButton(_ symbol: String, action: @escaping () -> Void) -> some View {
@@ -131,9 +141,7 @@ struct ClaudeToolDetail: View {
                     .foregroundStyle(Color(nsColor: Theme.claude))
             }
             VStack(alignment: .leading, spacing: 0) {
-                Text(primaryLine)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.white)
+                MarqueeText(text: primaryLine, font: .system(size: 11.5, weight: .medium))
                 HStack(spacing: 4) {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
@@ -157,7 +165,8 @@ struct ClaudeToolDetail: View {
     private var primaryLine: String {
         switch session.activity {
         case .tool(_, let detail?): return detail
-        case .waiting(let message): return message ?? "Waiting for you"
+        case .permission(let tool, let detail): return detail ?? tool.map { "Allow \(ToolInfo.displayName($0))?" } ?? "Needs permission"
+        case .input(let prompt): return prompt ?? "Claude is asking you something"
         case .done: return session.transcript.lastText ?? "Finished"
         default: return session.transcript.lastText ?? session.statusText
         }
@@ -180,10 +189,14 @@ struct ClaudeBadge: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.85))
                     .contentTransition(.symbolEffect(.replace))
-            } else if case .waiting = model.selectedSession?.activity {
+            } else if case .permission = model.selectedSession?.activity {
                 Image(systemName: "hand.raised.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color(nsColor: Theme.amber))
+            } else if case .input = model.selectedSession?.activity {
+                Image(systemName: "questionmark.bubble.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: Theme.input))
             } else {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 11, weight: .bold))
