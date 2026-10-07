@@ -19,6 +19,10 @@ enum LeftContent: Hashable {
     case musicInfo(expanded: Bool)
     /// Up Next (music-only): upcoming songs beside the cover.
     case queue
+    /// Timers own the left ear while any run: the urgent one collapsed,
+    /// all of them (plus Claude) as a strip when open.
+    case timer
+    case timerStrip
     case claudeGlyph
     case claudeDetail(expanded: Bool)
 }
@@ -35,6 +39,7 @@ enum RightContent: Hashable {
 
 struct NotchActions {
     var openSettings: () -> Void
+    var openTimerInput: () -> Void
     var checkForUpdates: () -> Void
     var quit: () -> Void
 }
@@ -45,7 +50,9 @@ final class NotchViewModel {
     let claude: ClaudeModel
     let prefs: Preferences
     let queue: QueueModel
+    let timers: TimerModel
     @ObservationIgnored var openSettings: () -> Void = {}
+    @ObservationIgnored var openTimerInput: () -> Void = {}
 
     var geometry: NotchGeometry
     private(set) var leftMode: EarMode = .collapsed
@@ -75,12 +82,13 @@ final class NotchViewModel {
 
     init(
         nowPlaying: NowPlayingModel, claude: ClaudeModel, prefs: Preferences, geometry: NotchGeometry,
-        queue: QueueModel? = nil
+        queue: QueueModel? = nil, timers: TimerModel? = nil
     ) {
         self.nowPlaying = nowPlaying
         self.claude = claude
         self.prefs = prefs
         self.queue = queue ?? QueueModel(prefs: prefs)
+        self.timers = timers ?? TimerModel(defaults: UserDefaults(suiteName: "upthere.preview") ?? .standard)
         self.geometry = geometry
         observeTrack()
     }
@@ -128,9 +136,9 @@ final class NotchViewModel {
         }
     }
 
-    /// Claude asking for permission auto-peeks the agent ear.
+    /// Claude needing you, or a countdown ending, auto-peeks the left ear.
     var effectiveLeftMode: EarMode {
-        leftMode == .collapsed && claude.attention != nil ? .peek : leftMode
+        leftMode == .collapsed && (claude.attention != nil || timers.alertingID != nil) ? .peek : leftMode
     }
 
     var isAnyEarOpen: Bool { effectiveLeftMode != .collapsed || rightMode != .collapsed }
@@ -148,6 +156,25 @@ final class NotchViewModel {
         let music = nowPlaying.isLive || (musicEarOpen && nowPlaying.current != nil)
 
         let claudeLeft: LeftContent = l == .collapsed ? .claudeGlyph : .claudeDetail(expanded: l == .expanded)
+
+        // Timers take the left ear (Claude needing you still overrides).
+        // Music then lives entirely in the right ear; Claude without music
+        // keeps the right ear, and appears as a chip in the timer strip.
+        if !timers.isEmpty {
+            let left: LeftContent =
+                claude.attention != nil && prefs.claudeEnabled
+                ? .claudeDetail(expanded: false) : l == .collapsed ? .timer : .timerStrip
+            let musicNow = nowPlaying.isLive || (r != .collapsed && nowPlaying.current != nil)
+            let right: RightContent
+            switch (musicNow, sessionsLive) {
+            case (true, false): right = r == .collapsed ? .musicBars : .musicControls(expanded: r == .expanded)
+            case (true, true): right = r == .collapsed ? .musicCompact : .musicFull(expanded: r == .expanded)
+            case (false, true): right = r == .collapsed ? .claudeBadge : .claudeTool(expanded: r == .expanded)
+            case (false, false): right = .none
+            }
+            return (left, right)
+        }
+
         switch (music, agents) {
         case (false, false):
             return (.none, .none)
@@ -189,6 +216,8 @@ final class NotchViewModel {
         case .musicArt, .claudeGlyph: unit + 4
         case .musicInfo(let expanded): expanded ? 280 : 230
         case .queue: 360
+        case .timer: unit + 54
+        case .timerStrip: 380
         case .claudeDetail(let expanded): expanded ? 340 : 240
         }
     }

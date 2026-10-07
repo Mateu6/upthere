@@ -142,6 +142,13 @@ final class Preferences {
     /// Keep the Claude ear (ring + limits) visible when no session is active.
     var showUsageWhenIdle: Bool { didSet { save(showUsageWhenIdle, "showUsageWhenIdle") } }
     var contextWindow: ContextWindowSize { didSet { save(contextWindow.rawValue, "contextWindow") } }
+
+    // Timers
+    var timerHotKey: HotKey.Preset { didSet { save(timerHotKey.rawValue, "timerHotKey") } }
+    var timerCalendar: Bool { didSet { save(timerCalendar, "timerCalendar") } }
+    var timerCalendarID: String? { didSet { save(timerCalendarID, "timerCalendarID") } }
+    var timerKeepShort: Bool { didSet { save(timerKeepShort, "timerKeepShort") } }
+    var timerSound: Bool { didSet { save(timerSound, "timerSound") } }
     var infoAutoCompact: Bool { didSet { save(infoAutoCompact, "infoAutoCompact") } }
 
     /// The 7-day local token count is only computed when it's displayed.
@@ -182,6 +189,11 @@ final class Preferences {
         showUsageWhenIdle = defaults.object(forKey: "showUsageWhenIdle") as? Bool ?? false
         contextWindow = ContextWindowSize(rawValue: defaults.string(forKey: "contextWindow") ?? "") ?? .auto
         infoAutoCompact = defaults.object(forKey: "infoAutoCompact") as? Bool ?? true
+        timerHotKey = HotKey.Preset(rawValue: defaults.string(forKey: "timerHotKey") ?? "") ?? .optionCommandT
+        timerCalendar = defaults.object(forKey: "timerCalendar") as? Bool ?? false
+        timerCalendarID = defaults.string(forKey: "timerCalendarID")
+        timerKeepShort = defaults.object(forKey: "timerKeepShort") as? Bool ?? false
+        timerSound = defaults.object(forKey: "timerSound") as? Bool ?? true
     }
 
     private func save(_ value: Any?, _ key: String) {

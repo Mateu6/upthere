@@ -12,13 +12,14 @@ struct LeftEarContent: View {
     let model: NotchViewModel
     let content: LeftContent
 
-    private enum Anchor: Equatable { case art, spark }
+    private enum Anchor: Equatable { case art, spark, timer }
 
     private var anchor: Anchor? {
         switch content {
         case .musicArt, .musicInfo, .queue: .art
         case .claudeGlyph, .claudeDetail: .spark
-        case .none: nil
+        case .timer: .timer
+        case .timerStrip, .none: nil
         }
     }
 
@@ -56,6 +57,14 @@ struct LeftEarContent: View {
             case .spark:
                 ClaudeGlyph(session: model.selectedSession, size: h * 0.46, ring: model.usageRing)
                     .transition(.blurReplace)
+            case .timer:
+                if let timer = model.timers.urgent {
+                    TimerGlyph(
+                        timer: timer, color: model.timers.color(of: timer), size: h * 0.5,
+                        alerting: model.timers.alertingID == timer.id
+                    )
+                    .transition(.blurReplace)
+                }
             case nil:
                 EmptyView()
             }
@@ -92,6 +101,26 @@ struct LeftEarContent: View {
                 QueueStrip(model: model)
                     .padding(.leading, 10)
                     .padding(.trailing, h + 2)
+            case .timer:
+                // The urgent timer's time beside its glyph, a count of the
+                // others, and a tiny spark while Claude works.
+                if let timer = model.timers.urgent {
+                    HStack(spacing: 5) {
+                        Spacer(minLength: 0)
+                        if model.prefs.claudeEnabled, model.claude.primary?.activity.isWorking == true {
+                            ClaudeSparkView(style: .working, color: Theme.claude).frame(width: 9, height: 9)
+                        }
+                        if model.timers.timers.count > 1 {
+                            Text("+\(model.timers.timers.count - 1)")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Theme.secondary)
+                        }
+                        TimerTime(timer: timer, compact: true)
+                    }
+                    .padding(.trailing, h + 2)
+                }
+            case .timerStrip:
+                TimerStrip(model: model)
             }
         }
     }

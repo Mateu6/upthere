@@ -5,9 +5,13 @@ import SwiftUI
 final class SettingsWindowController {
     private let window: NSWindow
 
-    init(prefs: Preferences, nowPlaying: NowPlayingModel, claude: ClaudeModel, queue: QueueModel, updater: Updater) {
+    init(
+        prefs: Preferences, nowPlaying: NowPlayingModel, claude: ClaudeModel, queue: QueueModel,
+        calendar: CalendarLogger, updater: Updater
+    ) {
         let controller = NSHostingController(
-            rootView: SettingsView(prefs: prefs, nowPlaying: nowPlaying, claude: claude, queue: queue, updater: updater))
+            rootView: SettingsView(
+                prefs: prefs, nowPlaying: nowPlaying, claude: claude, queue: queue, calendar: calendar, updater: updater))
         window = NSWindow(contentViewController: controller)
         window.title = "Upthere Settings"
         window.styleMask = [.titled, .closable]
@@ -27,7 +31,11 @@ struct SettingsView: View {
     let nowPlaying: NowPlayingModel
     let claude: ClaudeModel
     let queue: QueueModel
+    let calendar: CalendarLogger
     @Bindable var updater: Updater
+    @State private var calendars: [(id: String, title: String)] = []
+    @State private var calendarAuthorized = false
+    @State private var calendarError: String?
     @State private var spotifyConnected = false
     @State private var spotifyBusy = false
     @State private var spotifyError: String?
@@ -108,6 +116,38 @@ struct SettingsView: View {
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
+
+            Section {
+                Picker("Start a timer with", selection: $prefs.timerHotKey) {
+                    ForEach(HotKey.Preset.allCases) { Text($0.title).tag($0) }
+                }
+                Toggle("Add finished timers to Calendar", isOn: $prefs.timerCalendar)
+                    .onChange(of: prefs.timerCalendar) { _, on in if on { requestCalendar() } }
+                if prefs.timerCalendar {
+                    if calendarAuthorized {
+                        Picker("Calendar", selection: $prefs.timerCalendarID) {
+                            Text("Default calendar").tag(String?.none)
+                            ForEach(calendars, id: \.id) { Text($0.title).tag(Optional($0.id)) }
+                        }
+                        if !calendars.contains(where: { $0.title == "Upthere" }) {
+                            Button("Create “Upthere” calendar") { createCalendar() }
+                        }
+                    } else {
+                        Button("Allow Calendar access") { requestCalendar() }
+                    }
+                    if let calendarError { Text(calendarError).foregroundStyle(.red).font(.caption) }
+                }
+                Toggle("Keep entries shorter than a minute", isOn: $prefs.timerKeepShort)
+                Toggle("Sound when a countdown ends", isOn: $prefs.timerSound)
+            } header: {
+                Text("Timers")
+            } footer: {
+                Text(
+                    "Type “review PR” to count up, or “waiting for CI 15m” to count down. Up to \(TimerModel.maxTimers) at once; each one becomes its own calendar event when you stop it."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
+            .onAppear { reloadCalendars() }
 
             Section {
                 Toggle("Show upcoming songs (when only music is shown)", isOn: $prefs.showQueue)
@@ -231,6 +271,29 @@ struct SettingsView: View {
             .fixedSize()
             .disabled(!isOn.wrappedValue)
         }
+    }
+
+    private func reloadCalendars() {
+        calendarAuthorized = calendar.isAuthorized
+        calendars = calendar.calendars().map { ($0.calendarIdentifier, $0.title) }
+    }
+
+    private func requestCalendar() {
+        Task {
+            _ = await calendar.requestAccess()
+            reloadCalendars()
+        }
+    }
+
+    private func createCalendar() {
+        do {
+            let created = try calendar.createUpthereCalendar()
+            prefs.timerCalendarID = created.calendarIdentifier
+            calendarError = nil
+        } catch {
+            calendarError = error.localizedDescription
+        }
+        reloadCalendars()
     }
 
     private func connectSpotify() {

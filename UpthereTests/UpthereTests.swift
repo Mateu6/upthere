@@ -382,3 +382,91 @@ struct AttentionTests {
         #expect(chips.map(\.text) == ["ctx 76%", "210k to compact"])
     }
 }
+
+struct TimerParserTests {
+    @Test func parsesDurations() {
+        #expect(TimerParser.parse("review PR") == .init(label: "review PR", duration: nil))
+        #expect(TimerParser.parse("waiting for CI 15m") == .init(label: "waiting for CI", duration: 900))
+        #expect(TimerParser.parse("deploy 1h30m") == .init(label: "deploy", duration: 5400))
+        #expect(TimerParser.parse("deploy 1h 30m") == .init(label: "deploy", duration: 5400))
+        #expect(TimerParser.parse("tea 90s") == .init(label: "tea", duration: 90))
+        #expect(TimerParser.parse("tea for 4") == .init(label: "tea", duration: 240))
+        #expect(TimerParser.parse("tea for 4m") == .init(label: "tea", duration: 240))
+        #expect(TimerParser.parse("focus 1.5h") == .init(label: "focus", duration: 5400))
+        // Numbers that belong to the label stay there.
+        #expect(TimerParser.parse("PR 42") == .init(label: "PR 42", duration: nil))
+        #expect(TimerParser.parse("25m") == .init(label: "Timer", duration: 1500))
+    }
+
+    @Test func formats() {
+        #expect(TimerParser.clock(905) == "15:05")
+        #expect(TimerParser.clock(3725) == "1:02:05")
+        #expect(TimerParser.compact(45) == "45s")
+        #expect(TimerParser.compact(14 * 60 + 1) == "15m")
+        #expect(TimerParser.compact(3900) == "1h05")
+    }
+}
+
+@MainActor
+struct TimerModelTests {
+    private func model() -> TimerModel { TimerModel(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!) }
+
+    @Test func pauseAccountingAndOvertime() throws {
+        let timers = model()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let timer = try #require(timers.start("tea 4m", now: t0))
+        timers.pause(timer.id, now: t0.addingTimeInterval(60))
+        timers.resume(timer.id, now: t0.addingTimeInterval(160))  // paused 100 s
+        let current = try #require(timers.timers.first)
+        #expect(current.elapsed(at: t0.addingTimeInterval(200)) == 100)
+        #expect(current.remaining(at: t0.addingTimeInterval(400)) == -60)  // 1 min overtime
+        #expect(current.endDate == t0.addingTimeInterval(340))
+    }
+
+    @Test func severalTimersIndependently() throws {
+        let timers = model()
+        var entries: [TimerEntry] = []
+        timers.onFinish = { entries.append($0) }
+        let now = Date()
+        let work = try #require(timers.start("review PR", now: now.addingTimeInterval(-600)))
+        _ = timers.start("waiting for CI 15m", now: now.addingTimeInterval(-60))
+        _ = timers.start("tea 4m", now: now.addingTimeInterval(-60))
+        #expect(timers.timers.count == 3)
+        #expect(Set(timers.timers.map(\.colorIndex)).count == 3)
+        #expect(timers.urgent?.label == "tea")  // the countdown closest to its end
+
+        timers.pause(work.id)
+        #expect(timers.timers.first { $0.id == work.id }?.isPaused == true)
+        #expect(timers.timers.filter(\.isPaused).count == 1)
+
+        timers.stopAll()
+        #expect(timers.isEmpty)
+        #expect(entries.map(\.label).sorted() == ["review PR", "tea", "waiting for CI"])
+    }
+
+    @Test func extendFromOvertime() throws {
+        let timers = model()
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        let timer = try #require(timers.start("x 1m", now: t0))
+        timers.extend(timer.id, by: 300, now: t0.addingTimeInterval(120))  // 1 min over, +5
+        #expect(timers.timers.first?.remaining(at: t0.addingTimeInterval(120)) == 300)
+    }
+
+    @Test func persistsAcrossLaunches() {
+        let suite = "upthere.tests.\(UUID())"
+        let first = TimerModel(defaults: UserDefaults(suiteName: suite)!)
+        first.start("review PR")
+        let second = TimerModel(defaults: UserDefaults(suiteName: suite)!)
+        #expect(second.timers.map(\.label) == ["review PR"])
+        #expect(second.recentLabels.first == "review PR")
+    }
+
+    @Test func calendarFields() {
+        let start = Date(timeIntervalSince1970: 3_000_000)
+        let entry = TimerEntry(label: "waiting for CI", start: start, end: start.addingTimeInterval(1500), countdown: 900, activeTime: 1200)
+        let fields = CalendarLogger.fields(for: entry)
+        #expect(fields.title == "waiting for CI")
+        #expect(fields.start == start && fields.end == start.addingTimeInterval(1500))
+        #expect(fields.notes == "Countdown 15m (+5m over) · 5m paused · logged by Upthere")
+    }
+}

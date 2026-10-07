@@ -26,6 +26,8 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Finished timers are added to the calendar you choose, so your day's work log ends up in Calendar.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>The live visualizer reads the music player's audio to animate the sound bars. Nothing is recorded or stored.</string>
 	<key>NSAppleEventsUsageDescription</key>

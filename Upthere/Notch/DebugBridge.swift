@@ -25,6 +25,9 @@ enum DebugBridge {
                 case "expanded-right": model.debugSet(left: .collapsed, right: .expanded)
                 case "check-updates": actions.checkForUpdates()
                 case "hud-volume": model.debugShowHUD(.volume(0.62), side: .right)
+                case let mode? where mode.hasPrefix("timer:"): model.timers.start(String(mode.dropFirst(6)))
+                case "timer-stopall": model.timers.stopAll()
+                case "timer-input": model.openTimerInput()
                 case "claude-off": model.prefs.claudeEnabled = false
                 case "claude-on": model.prefs.claudeEnabled = true
                 case "seek-active": model.previewSeek((model.nowPlaying.current?.duration ?? 200) * 0.4)
@@ -45,7 +48,7 @@ enum DebugBridge {
                     let g = model.geometry
                     let rect = CGRect(
                         x: g.notchRect.midX - 560, y: g.screenFrame.maxY - g.notchRect.maxY,
-                        width: 1120, height: g.height + 34)
+                        width: 1120, height: g.height + (mode == "timer-input" ? 260 : 34))
                     captureOwnWindows(rect: rect, to: URL(fileURLWithPath: dir).appendingPathComponent("window.png"))
                     // Lets tooling overlay the physical notch on the capture.
                     try? "\(g.notchWidth) \(g.height)".write(
