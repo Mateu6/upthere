@@ -283,3 +283,26 @@ struct UsageScannerTests {
         #expect(scanner.scanSync(now: now) == 157)
     }
 }
+
+@MainActor
+struct PerEarTests {
+    @Test func onlyTheTargetedEarOpens() {
+        let prefs = Preferences(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)
+        let claude = ClaudeModel()
+        claude.handle(HookEvent.parse(Data(#"{"hook_event_name":"UserPromptSubmit","session_id":"s","cwd":"/p"}"#.utf8))!)
+        let geometry = NotchGeometry(
+            screenFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            notchRect: CGRect(x: 656, y: 950, width: 200, height: 32), hasNotch: true)
+        let model = NotchViewModel(nowPlaying: NowPlayingModel(prefs: prefs), claude: claude, prefs: prefs, geometry: geometry)
+
+        #expect(model.content.left == .claudeGlyph && model.content.right == .claudeBadge)
+        model.debugSet(left: .collapsed, right: .peek)
+        #expect(model.content.left == .claudeGlyph)
+        #expect(model.content.right == .claudeTool(expanded: false))
+        model.debugSet(left: .expanded, right: .collapsed)
+        #expect(model.content.left == .claudeDetail(expanded: true))
+        #expect(model.content.right == .claudeBadge)
+        model.collapseAll()
+        #expect(!model.isAnyEarOpen)
+    }
+}

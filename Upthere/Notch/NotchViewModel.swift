@@ -3,9 +3,11 @@ import Observation
 
 nonisolated enum NotchSide: Equatable, Sendable { case left, center, right }
 
-enum NotchMode: Equatable {
+/// Each ear opens on its own: only the ear under the pointer peeks, and a
+/// click expands just that ear.
+enum EarMode: Equatable {
     case collapsed
-    case peek(NotchSide)
+    case peek
     case expanded
 }
 
@@ -42,15 +44,17 @@ final class NotchViewModel {
     let prefs: Preferences
 
     var geometry: NotchGeometry
-    private(set) var mode: NotchMode = .collapsed
+    private(set) var leftMode: EarMode = .collapsed
+    private(set) var rightMode: EarMode = .collapsed
     var selectedSessionID: String?
 
-    /// Collapsed + under the cursor (before the peek kicks in).
-    private(set) var hoverNudge = false
+    /// A collapsed ear under the cursor swells slightly before it peeks.
+    private(set) var nudgedSide: NotchSide?
     private(set) var hud: HUD?
     private(set) var hudSide: NotchSide = .right
 
-    @ObservationIgnored private var hoverTask: Task<Void, Never>?
+    @ObservationIgnored private var openTasks: [NotchSide: Task<Void, Never>] = [:]
+    @ObservationIgnored private var closeTasks: [NotchSide: Task<Void, Never>] = [:]
     @ObservationIgnored private var outsideClickMonitor: Any?
     @ObservationIgnored private var scrollAxis: ScrollAxis?
     @ObservationIgnored private var lastScroll = Date.distantPast
@@ -66,47 +70,48 @@ final class NotchViewModel {
 
     // MARK: Presentation
 
-    /// Claude asking for permission auto-peeks the agent ear.
-    var effectiveMode: NotchMode {
-        if mode == .collapsed && claude.attention != nil { return .peek(.left) }
-        return mode
+    func mode(_ side: NotchSide) -> EarMode {
+        switch side {
+        case .left: leftMode
+        case .right: rightMode
+        case .center: .collapsed
+        }
     }
 
-    var content: (left: LeftContent, right: RightContent) {
-        let mode = effectiveMode
-        let collapsed = mode == .collapsed
-        // Hovering reveals a paused/pinned player even after it stopped being "live".
-        let music = nowPlaying.isLive || (!collapsed && nowPlaying.current != nil)
-        let agents = prefs.claudeEnabled && claude.isLive
+    /// Claude asking for permission auto-peeks the agent ear.
+    var effectiveLeftMode: EarMode {
+        leftMode == .collapsed && claude.attention != nil ? .peek : leftMode
+    }
 
+    var isAnyEarOpen: Bool { effectiveLeftMode != .collapsed || rightMode != .collapsed }
+
+    var content: (left: LeftContent, right: RightContent) {
+        let l = effectiveLeftMode
+        let r = rightMode
+        let agents = prefs.claudeEnabled && claude.isLive
+        // An open music ear keeps showing a paused/pinned player.
+        let musicEarOpen = agents ? r != .collapsed : (l != .collapsed || r != .collapsed)
+        let music = nowPlaying.isLive || (musicEarOpen && nowPlaying.current != nil)
+
+        let claudeLeft: LeftContent = l == .collapsed ? .claudeGlyph : .claudeDetail(expanded: l == .expanded)
         switch (music, agents) {
         case (false, false):
             return (.none, .none)
         case (true, false):
-            switch mode {
-            case .collapsed: return (.musicArt, .musicBars)
-            case .peek: return (.musicInfo(expanded: false), .musicControls(expanded: false))
-            case .expanded: return (.musicInfo(expanded: true), .musicControls(expanded: true))
-            }
+            return (
+                l == .collapsed ? .musicArt : .musicInfo(expanded: l == .expanded),
+                r == .collapsed ? .musicBars : .musicControls(expanded: r == .expanded)
+            )
         case (false, true):
-            switch mode {
-            case .collapsed: return (.claudeGlyph, .claudeBadge)
-            case .peek: return (.claudeDetail(expanded: false), .claudeTool(expanded: false))
-            case .expanded: return (.claudeDetail(expanded: true), .claudeTool(expanded: true))
-            }
+            return (claudeLeft, r == .collapsed ? .claudeBadge : .claudeTool(expanded: r == .expanded))
         case (true, true):
-            switch mode {
-            case .collapsed: return (.claudeGlyph, .musicCompact)
-            case .peek(.left): return (.claudeDetail(expanded: false), .musicCompact)
-            case .peek: return (.claudeGlyph, .musicFull(expanded: false))
-            case .expanded: return (.claudeDetail(expanded: true), .musicFull(expanded: true))
-            }
+            return (claudeLeft, r == .collapsed ? .musicCompact : .musicFull(expanded: r == .expanded))
         }
     }
 
     /// Ear widths, without the shoulder flare.
-    var leftWidth: CGFloat { nudged(clamp(width(content.left), room: geometry.leftRoom)) }
-    var rightWidth: CGFloat { nudged(clamp(width(content.right), room: geometry.rightRoom)) }
+    var leftWidth: CGFloat { nudged(clamp(width(content.left), room: geometry.leftRoom), .left) }
+    var rightWidth: CGFloat { nudged(clamp(width(content.right), room: geometry.rightRoom), .right) }
 
     /// The widest an ear can get on this screen (including the hover nudge).
     func maxEarWidth(room: CGFloat) -> CGFloat {
@@ -117,8 +122,8 @@ final class NotchViewModel {
 
     /// Collapsed ears swell slightly under the cursor before peeking:
     /// immediate feedback that the notch noticed you.
-    private func nudged(_ width: CGFloat) -> CGFloat {
-        width > 0 && hoverNudge && mode == .collapsed ? width + 6 : width
+    private func nudged(_ width: CGFloat, _ side: NotchSide) -> CGFloat {
+        width > 0 && nudgedSide == side && mode(side) == .collapsed ? width + 6 : width
     }
 
     private func width(_ content: LeftContent) -> CGFloat {
@@ -148,7 +153,7 @@ final class NotchViewModel {
 
     /// The seek/volume overlay needs a widened music ear.
     func showsHUD(on side: NotchSide) -> Bool {
-        guard hud != nil, hudSide == side, mode != .collapsed else { return false }
+        guard hud != nil, hudSide == side, mode(side) != .collapsed else { return false }
         let c = content
         switch side {
         case .left: if case .musicInfo = c.left { return true }
@@ -230,30 +235,36 @@ final class NotchViewModel {
 
     // MARK: Interaction
 
-    /// Hover enter/exit events only say "something changed": which side is
-    /// hovered is read from the cursor's actual position. Events from two
-    /// panels (and missed exits when a panel shrinks under the cursor) can
-    /// arrive in any order, so trusting them made the wrong ear flash open.
+    /// Hover enter/exit events only say "something changed": what is hovered
+    /// is read from the cursor's actual position (events from two panels can
+    /// arrive in any order). Only the ear under the pointer opens; the notch
+    /// itself opens nothing. An ear the pointer left stays open for the
+    /// user's chosen delay.
     func hover(_ region: NotchSide, inside: Bool) {
-        hoverTask?.cancel()
-        if let side = regionUnderCursor() {
-            if mode == .collapsed && !hoverNudge { hoverNudge = true }
-            guard mode != .expanded, mode != .peek(side) else { return }
-            // Hover intent: ignore the cursor just passing through the menu bar.
-            let delay: Duration = mode == .collapsed ? .milliseconds(70) : .milliseconds(40)
-            hoverTask = Task { [weak self] in
-                try? await Task.sleep(for: delay)
-                guard !Task.isCancelled, let self, let side = self.regionUnderCursor() else { return }
-                self.setMode(.peek(side))
-            }
-        } else {
-            if hoverNudge { hoverNudge = false }
-            guard mode != .collapsed else { return }
-            let delay: Duration = mode == .expanded ? .milliseconds(600) : .milliseconds(240)
-            hoverTask = Task { [weak self] in
-                try? await Task.sleep(for: delay)
-                guard !Task.isCancelled, let self, self.regionUnderCursor() == nil else { return }
-                self.collapse()
+        let region = regionUnderCursor()
+        for side in [NotchSide.left, .right] {
+            if region == side {
+                closeTasks.removeValue(forKey: side)?.cancel()
+                guard mode(side) == .collapsed, openTasks[side] == nil else { continue }
+                if nudgedSide != side { nudgedSide = side }
+                // Hover intent: ignore the cursor just passing through the menu bar.
+                openTasks[side] = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(70))
+                    guard !Task.isCancelled, let self else { return }
+                    self.openTasks[side] = nil
+                    if self.regionUnderCursor() == side { self.setMode(side, .peek) }
+                }
+            } else {
+                openTasks.removeValue(forKey: side)?.cancel()
+                if nudgedSide == side { nudgedSide = nil }
+                guard mode(side) != .collapsed, closeTasks[side] == nil else { continue }
+                let delay = mode(side) == .expanded ? max(prefs.earCloseDelay, 0.6) : prefs.earCloseDelay
+                closeTasks[side] = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled, let self else { return }
+                    self.closeTasks[side] = nil
+                    if self.regionUnderCursor() != side { self.collapse(side) }
+                }
             }
         }
     }
@@ -273,51 +284,69 @@ final class NotchViewModel {
     }
 
     #if DEBUG
-    func debugSetMode(_ mode: NotchMode) {
-        hoverTask?.cancel()
-        setMode(mode)
+    func debugSet(left: EarMode, right: EarMode) {
+        setMode(.left, left)
+        setMode(.right, right)
     }
 
     func debugShowHUD(_ value: HUD, side: NotchSide) {
-        setMode(.peek(side))
+        setMode(side, .peek)
         showHUD(value, side: side, hold: .seconds(3))
     }
     #endif
 
-    func tap() {
-        hoverTask?.cancel()
-        if mode == .expanded {
-            if let side = regionUnderCursor() { setMode(.peek(side)) } else { collapse() }
+    /// Click on an ear: expand it, or back to a peek if it's expanded.
+    func tap(_ side: NotchSide) {
+        guard side != .center else { return }
+        openTasks.removeValue(forKey: side)?.cancel()
+        if mode(side) == .expanded {
+            setMode(side, .peek)
         } else {
-            setMode(.expanded)
+            setMode(side, .expanded)
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
     }
 
-    func collapse() {
-        hoverTask?.cancel()
-        hudTask?.cancel()
-        hud = nil
-        hoverNudge = false
-        selectedSessionID = nil
-        setMode(.collapsed)
+    func collapse(_ side: NotchSide) {
+        guard side != .center else { return }
+        openTasks.removeValue(forKey: side)?.cancel()
+        closeTasks.removeValue(forKey: side)?.cancel()
+        if hudSide == side {
+            hudTask?.cancel()
+            hud = nil
+        }
+        if nudgedSide == side { nudgedSide = nil }
+        if side == .left { selectedSessionID = nil }
+        setMode(side, .collapsed)
     }
 
-    private func setMode(_ new: NotchMode) {
-        guard new != mode else { return }
-        mode = new
+    func collapseAll() {
+        collapse(.left)
+        collapse(.right)
+    }
+
+    private func setMode(_ side: NotchSide, _ new: EarMode) {
+        switch side {
+        case .left: if leftMode != new { leftMode = new }
+        case .right: if rightMode != new { rightMode = new }
+        case .center: return
+        }
         updateOutsideClickMonitor()
     }
 
-    /// While expanded, a click anywhere else collapses the notch. The global
-    /// monitor only exists in that state, so it costs nothing otherwise.
+    /// While an ear is expanded, a click anywhere else collapses it. The
+    /// global monitor only exists in that state, so it costs nothing otherwise.
     private func updateOutsideClickMonitor() {
-        if mode == .expanded, outsideClickMonitor == nil {
+        let expanded = leftMode == .expanded || rightMode == .expanded
+        if expanded, outsideClickMonitor == nil {
             outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
                 [weak self] _ in
-                MainActor.assumeIsolated { self?.collapse() }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    for side in [NotchSide.left, .right] where self.mode(side) == .expanded { self.collapse(side) }
+                }
             }
-        } else if mode != .expanded, let monitor = outsideClickMonitor {
+        } else if !expanded, let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)
             outsideClickMonitor = nil
         }
@@ -352,7 +381,7 @@ final class NotchViewModel {
             scrollAxis = abs(dx) > abs(dy) ? .horizontal : .vertical
         }
         let precise = event.hasPreciseScrollingDeltas
-        if mode == .collapsed { setMode(.peek(side)) }
+        if mode(side) == .collapsed { setMode(side, .peek) }
 
         switch scrollAxis {
         case .horizontal where prefs.scrollToSeek:

@@ -57,6 +57,11 @@ struct SettingsView: View {
                 Picker("Display", selection: $prefs.display) {
                     ForEach(DisplayChoice.allCases) { Text($0.title).tag($0) }
                 }
+                LabeledContent("Keep ear open after leaving") {
+                    Slider(value: $prefs.earCloseDelay, in: 0...2, step: 0.1)
+                        .frame(width: 180)
+                    Text(String(format: "%.1f s", prefs.earCloseDelay)).monospacedDigit().frame(width: 50, alignment: .trailing)
+                }
                 LabeledContent("Max ear width") {
                     Slider(value: $prefs.maxEarWidth, in: 180...480, step: 10)
                         .frame(width: 180)

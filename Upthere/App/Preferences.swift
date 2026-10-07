@@ -88,6 +88,8 @@ final class Preferences {
     var pausedLingerMinutes: Double { didSet { save(pausedLingerMinutes, "pausedLingerMinutes") } }
     var claudeEnabled: Bool { didSet { save(claudeEnabled, "claudeEnabled") } }
     var maxEarWidth: Double { didSet { save(maxEarWidth, "maxEarWidth") } }
+    /// Seconds an ear stays open after the pointer leaves it.
+    var earCloseDelay: Double { didSet { save(earCloseDelay, "earCloseDelay") } }
     var display: DisplayChoice { didSet { save(display.rawValue, "display") } }
     var theme: NotchTheme { didSet { save(theme.rawValue, "theme") } }
     var clearGlassStyle: GlassStyle { didSet { save(clearGlassStyle.rawValue, "clearGlassStyle") } }
@@ -120,6 +122,7 @@ final class Preferences {
         pausedLingerMinutes = defaults.object(forKey: "pausedLingerMinutes") as? Double ?? 5
         claudeEnabled = defaults.object(forKey: "claudeEnabled") as? Bool ?? true
         maxEarWidth = defaults.object(forKey: "maxEarWidth") as? Double ?? 340
+        earCloseDelay = defaults.object(forKey: "earCloseDelay") as? Double ?? 0.3
         display = DisplayChoice(rawValue: defaults.string(forKey: "display") ?? "") ?? .builtIn
         theme = NotchTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .classic
         clearGlassStyle = GlassStyle(rawValue: defaults.string(forKey: "clearGlassStyle") ?? "") ?? .regular

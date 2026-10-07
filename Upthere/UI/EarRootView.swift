@@ -70,16 +70,16 @@ struct EarRootView: View {
         .frame(width: width, height: height)
         .contentShape(Rectangle())
         .onHover { model.hover(side, inside: $0) }
-        .onTapGesture { model.tap() }
+        .onTapGesture { model.tap(side) }
     }
 
-    /// Hover/click target under the physical notch, so the notch itself reacts.
+    /// Under the physical notch. It opens nothing, but moving across it
+    /// counts as leaving an ear.
     private func notchHalf(width: CGFloat) -> some View {
         Color.clear
             .frame(width: width)
             .contentShape(Rectangle())
             .onHover { model.hover(.center, inside: $0) }
-            .onTapGesture { model.tap() }
     }
 }
 
@@ -98,8 +98,8 @@ private struct Background: View {
             AuroraFill(colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side, notchHalf: notchHalf)
         case .clear where earOpen:
             ClearGlassFill(
-                style: model.prefs.clearGlassStyle, blackFade: model.prefs.clearBlackFade, side: side,
-                notchHalf: notchHalf)
+                style: model.prefs.clearGlassStyle, blackFade: model.prefs.clearBlackFade,
+                colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side)
         default:
             Color.black
         }
@@ -167,45 +167,43 @@ struct AuroraFill: View {
     }
 }
 
-/// Plain native Liquid Glass, optionally with the black-at-the-top fade.
-/// Under the physical notch it stays black, so the notch's sides read
-/// cleanly against the glass.
+/// Native Liquid Glass with a light tint from the cover (much subtler than
+/// Aurora), optionally with the black-at-the-top fade. Nothing is painted
+/// under the notch: the glass runs behind it, so the physical notch keeps
+/// its own rounded shape.
 struct ClearGlassFill: View {
     let style: GlassStyle
     let blackFade: Bool
+    let colors: [Color]
     let side: NotchSide
-    let notchHalf: CGFloat
 
     var body: some View {
-        GeometryReader { proxy in
-            let w = max(proxy.size.width, 1)
-            let notchEdge = min(1, notchHalf / w)
-            let inner: UnitPoint = side == .left ? .trailing : .leading
-            let outer: UnitPoint = side == .left ? .leading : .trailing
-            ZStack {
-                Rectangle().fill(.clear)
-                    .glassEffect(style == .regular ? .regular : .clear, in: Rectangle())
-                // Black under the notch, ending at its edge.
+        let inner: UnitPoint = side == .left ? .trailing : .leading
+        let outer: UnitPoint = side == .left ? .leading : .trailing
+        ZStack {
+            Rectangle().fill(.clear)
+                .glassEffect((style == .regular ? Glass.regular : .clear).tint(colors[0].opacity(0.14)), in: Rectangle())
+            // A hint of the cover's colors along the bottom.
+            Rectangle()
+                .fill(LinearGradient(colors: colors, startPoint: inner, endPoint: outer))
+                .opacity(0.28)
+                .mask(
+                    LinearGradient(
+                        stops: [.init(color: .clear, location: 0.35), .init(color: .white, location: 1)],
+                        startPoint: .top, endPoint: .bottom))
+            if blackFade {
                 Rectangle().fill(
                     LinearGradient(
                         stops: [
                             .init(color: .black, location: 0),
-                            .init(color: .black, location: max(0, notchEdge - 0.02)),
-                            .init(color: .black.opacity(0), location: min(1, notchEdge + (blackFade ? 0.08 : 0.005))),
-                        ], startPoint: inner, endPoint: outer))
-                if blackFade {
-                    Rectangle().fill(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black, location: 0),
-                                .init(color: .black.opacity(0.8), location: 0.38),
-                                .init(color: .black.opacity(0), location: 1),
-                            ], startPoint: .top, endPoint: .bottom))
-                }
+                            .init(color: .black.opacity(0.75), location: 0.38),
+                            .init(color: .black.opacity(0), location: 1),
+                        ], startPoint: .top, endPoint: .bottom))
             }
         }
         // White content on glass: keep the glass in its dark appearance.
         .environment(\.colorScheme, .dark)
         .animation(.smooth(duration: 0.3), value: blackFade)
+        .animation(.easeInOut(duration: 0.6), value: colors)
     }
 }

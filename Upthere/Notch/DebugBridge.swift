@@ -17,11 +17,12 @@ enum DebugBridge {
             let delay = Int(note.userInfo?["delay"] as? String ?? "") ?? 900
             MainActor.assumeIsolated {
                 switch mode {
-                case "collapsed": model.debugSetMode(.collapsed)
-                case "peek", "peek-center": model.debugSetMode(.peek(.center))
-                case "peek-left": model.debugSetMode(.peek(.left))
-                case "peek-right": model.debugSetMode(.peek(.right))
-                case "expanded": model.debugSetMode(.expanded)
+                case "collapsed": model.debugSet(left: .collapsed, right: .collapsed)
+                case "peek": model.debugSet(left: .peek, right: .peek)
+                case "peek-left": model.debugSet(left: .peek, right: .collapsed)
+                case "peek-right": model.debugSet(left: .collapsed, right: .peek)
+                case "expanded": model.debugSet(left: .expanded, right: .expanded)
+                case "expanded-right": model.debugSet(left: .collapsed, right: .expanded)
                 case "check-updates": actions.checkForUpdates()
                 case "hud-volume": model.debugShowHUD(.volume(0.62), side: .right)
                 case "hud-seek": model.debugShowHUD(.seek((model.nowPlaying.current?.duration ?? 200) * 0.4), side: .right)
