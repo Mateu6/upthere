@@ -79,11 +79,20 @@ struct EarRootView: View {
     /// inside the notch's own curve.
     private func notchHalf(earOpen: Bool) -> some View {
         let radius = earOpen ? 0 : Theme.notchCornerRadius
-        return UnevenRoundedRectangle(
+        let shape = UnevenRoundedRectangle(
             bottomLeadingRadius: side == .left ? radius : 0,
             bottomTrailingRadius: side == .right ? radius : 0
         )
-        .fill(.black)
+        // Mostly hidden by the physical notch, but its corners show: in
+        // Aurora it carries the same gradient as the ears, so the notch's own
+        // rounded shape sits inside one continuous band of color.
+        return Group {
+            if model.prefs.theme == .aurora && earOpen {
+                AuroraFill(shape: shape, colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side, solid: true)
+            } else {
+                shape.fill(.black)
+            }
+        }
         .frame(width: model.geometry.notchWidth / 2)
         .contentShape(Rectangle())
         .onHover { model.hover(.center, inside: $0) }
@@ -92,9 +101,7 @@ struct EarRootView: View {
 }
 
 /// Classic: solid black, so the ears read as part of the notch.
-/// Aurora: Liquid Glass tinted with the cover's colors, black at the top
-/// (melting into the notch and bezel) and clearing towards the bottom, where
-/// the colors show through.
+/// Aurora: see `AuroraFill`.
 private struct EarBackground: View {
     let model: NotchViewModel
     let side: NotchSide
@@ -105,30 +112,43 @@ private struct EarBackground: View {
         case .classic:
             shape.fill(.black)
         case .aurora:
-            let colors = model.palette(for: side).map { Color(nsColor: $0) }
-            // Gradients run from the notch outwards.
-            let inner: UnitPoint = side == .left ? .trailing : .leading
-            let outer: UnitPoint = side == .left ? .leading : .trailing
-            ZStack {
+            AuroraFill(shape: shape, colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side)
+        }
+    }
+}
+
+/// Liquid Glass tinted with the cover's colors: black at the top (melting
+/// into the notch and bezel), clearing towards the bottom where the colors
+/// show. Colors run from the notch outwards; `solid` uses only the innermost
+/// color (for the strip under the notch, so it meets both ears seamlessly).
+struct AuroraFill<S: Shape>: View {
+    let shape: S
+    let colors: [Color]
+    let side: NotchSide
+    var solid = false
+
+    var body: some View {
+        let inner: UnitPoint = side == .left ? .trailing : .leading
+        let outer: UnitPoint = side == .left ? .leading : .trailing
+        ZStack {
+            if !solid {
                 shape.fill(.clear)
                     .glassEffect(.clear.tint(colors[0].opacity(0.22)), in: shape)
-                // The cover's colors, strongest at the bottom.
-                shape.fill(LinearGradient(colors: colors, startPoint: inner, endPoint: outer))
-                    .opacity(0.75)
-                    .mask(
-                        LinearGradient(
-                            stops: [.init(color: .clear, location: 0.1), .init(color: .white, location: 1)],
-                            startPoint: .top, endPoint: .bottom))
-                // Black at the top, melting into the notch and bezel; clear at the bottom.
-                shape.fill(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black.opacity(0.85), location: 0.38),
-                            .init(color: .black.opacity(0.05), location: 1),
-                        ], startPoint: .top, endPoint: .bottom))
             }
-            .animation(.easeInOut(duration: 0.6), value: colors)
+            shape.fill(LinearGradient(colors: solid ? [colors[0], colors[0]] : colors, startPoint: inner, endPoint: outer))
+                .opacity(0.75)
+                .mask(
+                    LinearGradient(
+                        stops: [.init(color: .clear, location: 0.1), .init(color: .white, location: 1)],
+                        startPoint: .top, endPoint: .bottom))
+            shape.fill(
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black.opacity(0.85), location: 0.38),
+                        .init(color: .black.opacity(0.05), location: 1),
+                    ], startPoint: .top, endPoint: .bottom))
         }
+        .animation(.easeInOut(duration: 0.6), value: colors)
     }
 }

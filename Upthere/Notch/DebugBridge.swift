@@ -37,6 +37,9 @@ enum DebugBridge {
                         x: g.notchRect.midX - 560, y: g.screenFrame.maxY - g.notchRect.maxY,
                         width: 1120, height: g.height + 34)
                     captureOwnWindows(rect: rect, to: URL(fileURLWithPath: dir).appendingPathComponent("window.png"))
+                    // Lets tooling overlay the physical notch on the capture.
+                    try? "\(g.notchWidth) \(g.height)".write(
+                        to: URL(fileURLWithPath: dir).appendingPathComponent("notch.txt"), atomically: true, encoding: .utf8)
                 }
             }
         }
