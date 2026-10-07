@@ -6,6 +6,8 @@ enum Theme {
     static let amber = NSColor(srgbRed: 1.0, green: 0.74, blue: 0.24, alpha: 1)
     static let secondary = Color.white.opacity(0.58)
     static let earRadius: CGFloat = 10
+    /// Concave flare where an ear meets the screen's top edge.
+    static let shoulderRadius: CGFloat = 6
     /// Bottom corner radius used to hide the black filler inside the physical notch.
     static let notchCornerRadius: CGFloat = 12
 
@@ -51,12 +53,10 @@ struct EarRootView: View {
     }
 
     private func ear(width: CGFloat, height: CGFloat) -> some View {
-        let shape = UnevenRoundedRectangle(
-            bottomLeadingRadius: side == .left ? min(Theme.earRadius, width / 2) : 0,
-            bottomTrailingRadius: side == .right ? min(Theme.earRadius, width / 2) : 0
-        )
-        return ZStack {
-            shape.fill(.black)
+        let shape = EarShape(side: side)
+        let alignment: Alignment = side == .left ? .trailing : .leading
+        return ZStack(alignment: alignment) {
+            EarBackground(model: model, side: side, shape: shape)
             Group {
                 if side == .left {
                     LeftEarContent(model: model, content: model.content.left)
@@ -66,7 +66,8 @@ struct EarRootView: View {
             }
             .frame(width: width, height: height)
         }
-        .frame(width: width, height: height)
+        // The shoulder flare sits outside the ear's content width.
+        .frame(width: width > 0 ? width + Theme.shoulderRadius : 0, height: height, alignment: alignment)
         .clipShape(shape)
         .contentShape(shape)
         .onHover { model.hover(side, inside: $0) }
@@ -87,5 +88,47 @@ struct EarRootView: View {
         .contentShape(Rectangle())
         .onHover { model.hover(.center, inside: $0) }
         .onTapGesture { model.tap() }
+    }
+}
+
+/// Classic: solid black, so the ears read as part of the notch.
+/// Aurora: Liquid Glass tinted with the cover's colors, black at the top
+/// (melting into the notch and bezel) and clearing towards the bottom, where
+/// the colors show through.
+private struct EarBackground: View {
+    let model: NotchViewModel
+    let side: NotchSide
+    let shape: EarShape
+
+    var body: some View {
+        switch model.prefs.theme {
+        case .classic:
+            shape.fill(.black)
+        case .aurora:
+            let colors = model.palette(for: side).map { Color(nsColor: $0) }
+            // Gradients run from the notch outwards.
+            let inner: UnitPoint = side == .left ? .trailing : .leading
+            let outer: UnitPoint = side == .left ? .leading : .trailing
+            ZStack {
+                shape.fill(.clear)
+                    .glassEffect(.clear.tint(colors[0].opacity(0.22)), in: shape)
+                // The cover's colors, strongest at the bottom.
+                shape.fill(LinearGradient(colors: colors, startPoint: inner, endPoint: outer))
+                    .opacity(0.75)
+                    .mask(
+                        LinearGradient(
+                            stops: [.init(color: .clear, location: 0.1), .init(color: .white, location: 1)],
+                            startPoint: .top, endPoint: .bottom))
+                // Black at the top, melting into the notch and bezel; clear at the bottom.
+                shape.fill(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black.opacity(0.85), location: 0.38),
+                            .init(color: .black.opacity(0.05), location: 1),
+                        ], startPoint: .top, endPoint: .bottom))
+            }
+            .animation(.easeInOut(duration: 0.6), value: colors)
+        }
     }
 }

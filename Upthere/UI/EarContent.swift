@@ -11,6 +11,20 @@ struct LeftEarContent: View {
         let h = model.geometry.height
         let music = model.nowPlaying
         ZStack {
+            if let hud = model.hud, model.showsHUD(on: .left), let snapshot = music.current {
+                MusicHUDView(hud: hud, snapshot: snapshot, tint: music.artwork?.tint ?? .white)
+                    .transition(.blurReplace)
+            } else {
+                leftContent(h: h, music: music)
+                    .transition(.blurReplace)
+                    .id(content)
+            }
+        }
+        .animation(.smooth(duration: 0.28), value: model.showsHUD(on: .left))
+    }
+
+    @ViewBuilder private func leftContent(h: CGFloat, music: NowPlayingModel) -> some View {
+        ZStack {
             switch content {
             case .none:
                 Color.clear
@@ -19,7 +33,7 @@ struct LeftEarContent: View {
             case .musicInfo(let expanded):
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
-                        ArtworkThumb(artwork: music.artwork, size: h - 10)
+                        ArtworkThumb(artwork: music.artwork, size: h - 10, badge: snapshot.parentBundleID ?? snapshot.bundleID)
                             .onTapGesture { music.activatePlayerApp() }
                         TrackText(snapshot: snapshot, showAlbum: expanded)
                         Spacer(minLength: 0)
@@ -35,8 +49,6 @@ struct LeftEarContent: View {
                 }
             }
         }
-        .transition(.opacity.animation(.easeOut(duration: 0.15)))
-        .id(content)
     }
 }
 
@@ -45,9 +57,23 @@ struct RightEarContent: View {
     let content: RightContent
 
     var body: some View {
-        let h = model.geometry.height
         let music = model.nowPlaying
         let tint = music.artwork?.tint ?? .white
+        ZStack {
+            if let hud = model.hud, model.showsHUD(on: .right), let snapshot = music.current {
+                MusicHUDView(hud: hud, snapshot: snapshot, tint: tint)
+                    .transition(.blurReplace)
+            } else {
+                rightContent(music: music, tint: tint)
+                    .transition(.blurReplace)
+                    .id(content)
+            }
+        }
+        .animation(.smooth(duration: 0.28), value: model.showsHUD(on: .right))
+    }
+
+    @ViewBuilder private func rightContent(music: NowPlayingModel, tint: NSColor) -> some View {
+        let h = model.geometry.height
         ZStack {
             switch content {
             case .none:
@@ -82,7 +108,7 @@ struct RightEarContent: View {
             case .musicFull(let expanded):
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
-                        ArtworkThumb(artwork: music.artwork, size: h - 10)
+                        ArtworkThumb(artwork: music.artwork, size: h - 10, badge: snapshot.parentBundleID ?? snapshot.bundleID)
                             .onTapGesture { music.activatePlayerApp() }
                         VStack(alignment: .leading, spacing: 2) {
                             TrackText(snapshot: snapshot)
@@ -106,8 +132,6 @@ struct RightEarContent: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottom) { progressLine(tint: tint) }
-        .transition(.opacity.animation(.easeOut(duration: 0.15)))
-        .id(content)
     }
 
     /// A hairline along the ear's bottom edge whenever music is shown collapsed.
@@ -122,6 +146,58 @@ struct RightEarContent: View {
             }
         default:
             EmptyView()
+        }
+    }
+}
+
+/// Shown in the music ear while scrolling: seek position or volume.
+struct MusicHUDView: View {
+    let hud: NotchViewModel.HUD
+    let snapshot: PlaybackSnapshot
+    let tint: NSColor
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 18)
+                .contentTransition(.symbolEffect(.replace))
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.16))
+                    Capsule().fill(Color(nsColor: tint))
+                        .frame(width: max(4, proxy.size.width * fraction))
+                }
+            }
+            .frame(height: 4)
+            Text(label)
+                .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.85))
+                .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .animation(.smooth(duration: 0.12), value: fraction)
+    }
+
+    private var fraction: CGFloat {
+        switch hud {
+        case .seek(let t): CGFloat(t / max(snapshot.duration ?? 1, 1))
+        case .volume(let v): CGFloat(v)
+        }
+    }
+
+    private var symbol: String {
+        switch hud {
+        case .seek: "arrow.left.and.right"
+        case .volume(let v): v == 0 ? "speaker.slash.fill" : v < 0.34 ? "speaker.wave.1.fill" : v < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+        }
+    }
+
+    private var label: String {
+        switch hud {
+        case .seek(let t): "\(Theme.time(t)) / \(Theme.time(snapshot.duration ?? 0))"
+        case .volume(let v): "\(Int((v * 100).rounded()))%"
         }
     }
 }

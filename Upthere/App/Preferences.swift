@@ -16,6 +16,19 @@ enum PlayerFilterMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum NotchTheme: String, CaseIterable, Identifiable {
+    case classic
+    case aurora
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .classic: "Classic (black)"
+        case .aurora: "Aurora (artwork-tinted glass)"
+        }
+    }
+}
+
 enum DisplayChoice: String, CaseIterable, Identifiable {
     case builtIn
     case main
@@ -43,6 +56,9 @@ final class Preferences {
     var claudeEnabled: Bool { didSet { save(claudeEnabled, "claudeEnabled") } }
     var maxEarWidth: Double { didSet { save(maxEarWidth, "maxEarWidth") } }
     var display: DisplayChoice { didSet { save(display.rawValue, "display") } }
+    var theme: NotchTheme { didSet { save(theme.rawValue, "theme") } }
+    var scrollToSeek: Bool { didSet { save(scrollToSeek, "scrollToSeek") } }
+    var scrollForVolume: Bool { didSet { save(scrollForVolume, "scrollForVolume") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -55,6 +71,9 @@ final class Preferences {
         claudeEnabled = defaults.object(forKey: "claudeEnabled") as? Bool ?? true
         maxEarWidth = defaults.object(forKey: "maxEarWidth") as? Double ?? 340
         display = DisplayChoice(rawValue: defaults.string(forKey: "display") ?? "") ?? .builtIn
+        theme = NotchTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .classic
+        scrollToSeek = defaults.object(forKey: "scrollToSeek") as? Bool ?? true
+        scrollForVolume = defaults.object(forKey: "scrollForVolume") as? Bool ?? true
     }
 
     private func save(_ value: Any?, _ key: String) {

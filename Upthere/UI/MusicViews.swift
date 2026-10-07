@@ -4,6 +4,8 @@ struct ArtworkThumb: View {
     let artwork: Artwork?
     let size: CGFloat
     var dimmed = false
+    /// Bundle ID of the playing app, shown as a small badge.
+    var badge: String? = nil
 
     var body: some View {
         Group {
@@ -23,8 +25,31 @@ struct ArtworkThumb: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+        .overlay(alignment: .bottomTrailing) {
+            if let badge, let icon = AppIcons.icon(for: badge) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: size * 0.46, height: size * 0.46)
+                    .shadow(color: .black.opacity(0.6), radius: 1.5)
+                    .offset(x: size * 0.14, y: size * 0.12)
+            }
+        }
         .opacity(dimmed ? 0.55 : 1)
         .animation(.easeOut(duration: 0.2), value: artwork)
+    }
+}
+
+/// App icons by bundle ID, looked up once.
+enum AppIcons {
+    private static var cache: [String: NSImage?] = [:]
+
+    static func icon(for bundleID: String) -> NSImage? {
+        if let cached = cache[bundleID] { return cached }
+        let icon = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map {
+            NSWorkspace.shared.icon(forFile: $0.path)
+        }
+        cache[bundleID] = icon
+        return icon
     }
 }
 

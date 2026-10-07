@@ -43,6 +43,9 @@ struct SettingsView: View {
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
                     }
+                Picker("Theme", selection: $prefs.theme) {
+                    ForEach(NotchTheme.allCases) { Text($0.title).tag($0) }
+                }
                 Picker("Display", selection: $prefs.display) {
                     ForEach(DisplayChoice.allCases) { Text($0.title).tag($0) }
                 }
@@ -74,6 +77,8 @@ struct SettingsView: View {
                 LabeledContent("Keep paused music for") {
                     Stepper("\(Int(prefs.pausedLingerMinutes)) min", value: $prefs.pausedLingerMinutes, in: 0...60, step: 1)
                 }
+                Toggle("Scroll sideways on the music ear to seek", isOn: $prefs.scrollToSeek)
+                Toggle("Scroll up/down on the music ear for volume", isOn: $prefs.scrollForVolume)
                 Toggle("Use MediaRemote adapter (all players)", isOn: $prefs.useMediaRemoteAdapter)
             } header: {
                 Text("Now Playing")

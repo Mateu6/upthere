@@ -11,6 +11,7 @@ final class NotchWindowController {
     private let prefs: Preferences
     private let left: EarWindow
     private let right: EarWindow
+    private var scrollMonitor: Any?
     private var shrinkTask: Task<Void, Never>?
     private var screenObserver: NSObjectProtocol?
 
@@ -32,7 +33,8 @@ final class NotchWindowController {
         }
         observeLayout()
         observeDisplayPreference()
-        apply(left: model.leftWidth, right: model.rightWidth)
+        installScrollMonitor()
+        apply(left: model.leftExtent, right: model.rightExtent)
         #if DEBUG
         DebugBridge.install(model: model, actions: actions) { [left, right] in
             [("left", left.panel.contentView!), ("right", right.panel.contentView!)]
@@ -45,13 +47,13 @@ final class NotchWindowController {
         let geometry = NotchGeometry.make(for: screen)
         guard geometry != viewModel.geometry else { return }
         viewModel.geometry = geometry
-        apply(left: viewModel.leftWidth, right: viewModel.rightWidth)
+        apply(left: viewModel.leftExtent, right: viewModel.rightExtent)
     }
 
     private func observeLayout() {
         withObservationTracking {
-            _ = viewModel.leftWidth
-            _ = viewModel.rightWidth
+            _ = viewModel.leftExtent
+            _ = viewModel.rightExtent
         } onChange: { [weak self] in
             // onChange fires before the new value is stored; hop once.
             Task { @MainActor [weak self] in
@@ -75,14 +77,36 @@ final class NotchWindowController {
     /// Grow immediately; shrink only after the ears finished closing.
     private func layoutChanged() {
         shrinkTask?.cancel()
-        let l = viewModel.leftWidth
-        let r = viewModel.rightWidth
+        let l = viewModel.leftExtent
+        let r = viewModel.rightExtent
         apply(left: max(l, left.extent), right: max(r, right.extent))
         guard l < left.extent || r < right.extent else { return }
         shrinkTask = Task { [weak self] in
             try? await Task.sleep(for: Self.shrinkDelay)
             guard !Task.isCancelled, let self else { return }
-            self.apply(left: self.viewModel.leftWidth, right: self.viewModel.rightWidth)
+            self.apply(left: self.viewModel.leftExtent, right: self.viewModel.rightExtent)
+        }
+    }
+
+    /// Scroll events over the panels arrive through the app's event queue
+    /// even though the panels never become key.
+    private func installScrollMonitor() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            // Local monitors run on the main thread.
+            nonisolated(unsafe) let event = event
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard let self, let window = event.window else { return false }
+                let side: NotchSide
+                if window === self.left.panel {
+                    side = .left
+                } else if window === self.right.panel {
+                    side = .right
+                } else {
+                    return false
+                }
+                return self.viewModel.scroll(event, side: side)
+            }
+            return consumed ? nil : event
         }
     }
 
