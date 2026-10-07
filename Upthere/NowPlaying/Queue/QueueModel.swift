@@ -55,6 +55,7 @@ final class QueueModel {
     private func load(for snapshot: PlaybackSnapshot) async {
         switch snapshot.bundleID {
         case KnownPlayers.spotify:
+            spotify.migrateConnectionFlag()
             guard spotify.isConnected else {
                 set([], .needsSpotifyLogin)
                 return

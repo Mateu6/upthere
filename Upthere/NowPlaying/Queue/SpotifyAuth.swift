@@ -29,16 +29,45 @@ final class SpotifyAuth {
     var clientID: String
     private var accessToken: String?
     private var expiry = Date.distantPast
+    /// Read from the Keychain at most once per run (each read of an ad-hoc
+    /// signed app's item can make macOS ask for the password).
+    private var refreshToken: String?
+    private var refreshTokenLoaded = false
 
     init(clientID: String) {
         self.clientID = clientID
     }
 
-    var isConnected: Bool { Keychain.get("spotify-refresh-token") != nil }
+    /// A plain flag, so checking it (e.g. in Settings) never touches the Keychain.
+    var isConnected: Bool { UserDefaults.standard.bool(forKey: "spotifyConnected") }
+
+    /// Settles the flag for logins made before it existed.
+    func migrateConnectionFlag() {
+        guard UserDefaults.standard.object(forKey: "spotifyConnected") == nil else { return }
+        UserDefaults.standard.set(storedRefreshToken() != nil, forKey: "spotifyConnected")
+    }
 
     func disconnect() {
         Keychain.delete("spotify-refresh-token")
+        UserDefaults.standard.set(false, forKey: "spotifyConnected")
         accessToken = nil
+        refreshToken = nil
+        refreshTokenLoaded = true
+    }
+
+    private func storedRefreshToken() -> String? {
+        if !refreshTokenLoaded {
+            refreshToken = Keychain.get("spotify-refresh-token")
+            refreshTokenLoaded = true
+        }
+        return refreshToken
+    }
+
+    private func storeRefreshToken(_ token: String?) {
+        refreshToken = token
+        refreshTokenLoaded = true
+        if let token { Keychain.set(token, for: "spotify-refresh-token") } else { Keychain.delete("spotify-refresh-token") }
+        UserDefaults.standard.set(token != nil, forKey: "spotifyConnected")
     }
 
     func connect() async throws {
@@ -72,7 +101,7 @@ final class SpotifyAuth {
     /// A valid access token, refreshed when needed.
     func token() async throws -> String {
         if let accessToken, expiry > .now.addingTimeInterval(30) { return accessToken }
-        guard let refresh = Keychain.get("spotify-refresh-token") else { throw AuthError.cancelled }
+        guard let refresh = storedRefreshToken() else { throw AuthError.cancelled }
         try await tokenRequest(["grant_type": "refresh_token", "refresh_token": refresh, "client_id": clientID])
         guard let accessToken else { throw AuthError.cancelled }
         return accessToken
@@ -90,12 +119,12 @@ final class SpotifyAuth {
         guard status == 200, let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let access = json["access_token"] as? String
         else {
-            if status == 400 || status == 401 { Keychain.delete("spotify-refresh-token") }
+            if status == 400 || status == 401 { storeRefreshToken(nil) }
             throw AuthError.badResponse(status, String(decoding: data, as: UTF8.self))
         }
         accessToken = access
         expiry = .now.addingTimeInterval((json["expires_in"] as? Double) ?? 3600)
-        if let refresh = json["refresh_token"] as? String { Keychain.set(refresh, for: "spotify-refresh-token") }
+        if let refresh = json["refresh_token"] as? String, refresh != refreshToken { storeRefreshToken(refresh) }
     }
 }
 
