@@ -17,6 +17,8 @@ enum LeftContent: Hashable {
     case none
     case musicArt
     case musicInfo(expanded: Bool)
+    /// Up Next (music-only): upcoming songs beside the cover.
+    case queue
     case claudeGlyph
     case claudeDetail(expanded: Bool)
 }
@@ -52,7 +54,7 @@ final class NotchViewModel {
 
     /// A collapsed ear under the cursor swells slightly before it peeks.
     private(set) var nudgedSide: NotchSide?
-    /// The seek bar is grown (hovered 200 ms, dragged or scroll-seeking);
+    /// The seek bar is grown (hovered 150 ms, dragged or scroll-seeking);
     /// the music ear's content moves up to make room.
     private(set) var seekBarActive = false
     /// Where a drag or scroll would seek to, shown in the bar itself.
@@ -104,7 +106,7 @@ final class NotchViewModel {
         guard tracksObserved, prefs.announceTracks, let key, key != lastTrackKey,
             nowPlaying.current?.isPlaying == true
         else { return }
-        let side: NotchSide = prefs.claudeEnabled && claude.isLive ? .right : .left
+        let side: NotchSide = .right  // the title lives in the right ear
         guard mode(side) == .collapsed else { return }
         setMode(side, .peek)
         closeTasks.removeValue(forKey: side)?.cancel()
@@ -147,7 +149,9 @@ final class NotchViewModel {
             return (.none, .none)
         case (true, false):
             return (
-                l == .collapsed ? .musicArt : .musicInfo(expanded: l == .expanded),
+                // Left: cover, opening to Up Next. Right: bars, opening to
+                // title, artist and controls.
+                l == .collapsed ? .musicArt : prefs.showQueue ? .queue : .musicInfo(expanded: l == .expanded),
                 r == .collapsed ? .musicBars : .musicControls(expanded: r == .expanded)
             )
         case (false, true):
@@ -179,6 +183,7 @@ final class NotchViewModel {
         case .none: 0
         case .musicArt, .claudeGlyph: unit + 4
         case .musicInfo(let expanded): expanded ? 280 : 230
+        case .queue: 360
         case .claudeDetail(let expanded): expanded ? 340 : 240
         }
     }
@@ -188,7 +193,7 @@ final class NotchViewModel {
         case .none: 0
         case .musicBars, .claudeBadge: unit + 4
         case .musicCompact: unit * 2
-        case .musicControls: showsQueue ? 360 : 150
+        case .musicControls: 300
         case .musicFull(let expanded): expanded ? 340 : 300
         case .claudeTool(let expanded): expanded ? 300 : 190
         }
@@ -200,18 +205,16 @@ final class NotchViewModel {
     }
 
     /// Up Next: the right ear of a music-only notch, when open.
-    var showsQueue: Bool {
-        guard prefs.showQueue, rightMode != .collapsed else { return false }
-        if case .musicControls = content.right { return true }
-        return false
-    }
+    var showsQueue: Bool { content.left == .queue }
 
     /// The seek/volume overlay needs a widened music ear.
     func showsHUD(on side: NotchSide) -> Bool {
         guard hud != nil, hudSide == side, mode(side) != .collapsed else { return false }
         let c = content
         switch side {
-        case .left: if case .musicInfo = c.left { return true }
+        case .left:
+            if case .musicInfo = c.left { return true }
+            if c.left == .queue { return true }
         case .right:
             switch c.right {
             case .musicControls, .musicFull: return true
@@ -225,7 +228,9 @@ final class NotchViewModel {
     func showsMusic(_ side: NotchSide) -> Bool {
         let c = content
         switch side {
-        case .left: return c.left == .musicArt || { if case .musicInfo = c.left { true } else { false } }()
+        case .left:
+            if case .musicInfo = c.left { return true }
+            return c.left == .musicArt || c.left == .queue
         case .right:
             switch c.right {
             case .musicBars, .musicCompact, .musicControls, .musicFull: return true
@@ -296,6 +301,9 @@ final class NotchViewModel {
     /// itself opens nothing. An ear the pointer left stays open for the
     /// user's chosen delay.
     func hover(_ region: NotchSide, inside: Bool) {
+        #if DEBUG
+        if debugHold { return }
+        #endif
         let region = regionUnderCursor()
         for side in [NotchSide.left, .right] {
             if region == side {
@@ -339,7 +347,12 @@ final class NotchViewModel {
     }
 
     #if DEBUG
+    /// Debug commands hold their state: the real pointer is elsewhere, and
+    /// its hover events would otherwise close what was opened.
+    @ObservationIgnored private var debugHold = false
+
     func debugSet(left: EarMode, right: EarMode) {
+        debugHold = left != .collapsed || right != .collapsed
         setMode(.left, left)
         setMode(.right, right)
     }
@@ -389,7 +402,7 @@ final class NotchViewModel {
         case .center: return
         }
         updateOutsideClickMonitor()
-        if side == .right && showsQueue { queue.refresh(for: nowPlaying.current) }
+        if side == .left && showsQueue { queue.refresh(for: nowPlaying.current) }
     }
 
     /// While an ear is expanded, a click anywhere else collapses it. The
@@ -439,7 +452,7 @@ final class NotchViewModel {
         }
         let precise = event.hasPreciseScrollingDeltas
         // Sideways over Up Next scrolls the list, not the track.
-        if scrollAxis == .horizontal && side == .right && showsQueue { return false }
+        if scrollAxis == .horizontal && side == .left && showsQueue { return false }
         if mode(side) == .collapsed { setMode(side, .peek) }
 
         switch scrollAxis {
@@ -473,7 +486,7 @@ final class NotchViewModel {
         seekHoverTask?.cancel()
         if inside {
             seekHoverTask = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(200))
+                try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled, let self, self.seekBarHovered else { return }
                 self.seekBarActive = true
             }

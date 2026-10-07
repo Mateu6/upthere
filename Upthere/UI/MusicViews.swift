@@ -117,7 +117,7 @@ struct HoverButtonStyle: ButtonStyle {
 }
 
 /// The progress line along the bottom of the music ear, always grabbable.
-/// Hovering it for 200 ms grows it upwards (the ear's content moves up to
+/// Hovering it for 150 ms grows it upwards (the ear's content moves up to
 /// make room); dragging or clicking seeks, previewing the target in the bar.
 struct SeekBar: View {
     let model: NotchViewModel
@@ -139,7 +139,7 @@ struct SeekBar: View {
                     ProgressLineView(snapshot: snapshot, color: color.withAlphaComponent(0.9))
                 }
             }
-            .frame(height: active ? 6 : 1.5)
+            .frame(height: active ? 7 : 1.5)
             .frame(maxHeight: .infinity, alignment: .bottom)
             .contentShape(Rectangle())
             .onHover { if interactive { model.seekBarHover($0) } }

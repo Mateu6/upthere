@@ -190,7 +190,7 @@ final class ProgressLineNSView: NSView {
     private let track = CALayer()
     private let fill = CALayer()
     private var snapshot: PlaybackSnapshot?
-    private var lastWidth: CGFloat = -1
+    private var lastSize: CGSize = .zero
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -205,8 +205,9 @@ final class ProgressLineNSView: NSView {
 
     override func layout() {
         super.layout()
-        if bounds.width != lastWidth {
-            lastWidth = bounds.width
+        // Height changes too: the seek bar grows under the pointer.
+        if bounds.size != lastSize {
+            lastSize = bounds.size
             restart()
         }
     }

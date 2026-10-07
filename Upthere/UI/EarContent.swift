@@ -16,7 +16,7 @@ struct LeftEarContent: View {
 
     private var anchor: Anchor? {
         switch content {
-        case .musicArt, .musicInfo: .art
+        case .musicArt, .musicInfo, .queue: .art
         case .claudeGlyph, .claudeDetail: .spark
         case .none: nil
         }
@@ -84,6 +84,10 @@ struct LeftEarContent: View {
                         .padding(.leading, 8)
                         .padding(.trailing, h + 4)
                 }
+            case .queue:
+                QueueStrip(model: model)
+                    .padding(.leading, 10)
+                    .padding(.trailing, h + 2)
             }
         }
     }
@@ -173,16 +177,12 @@ struct RightEarContent: View {
             case .musicControls:
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
-                        TransportControls(model: music, isPlaying: snapshot.isPlaying)
-                        if model.showsQueue {
-                            Rectangle().fill(.white.opacity(0.15)).frame(width: 1, height: h * 0.5)
-                            QueueStrip(model: model)
-                        } else {
-                            Spacer(minLength: 0)
-                        }
+                        TrackText(snapshot: snapshot)
+                        Spacer(minLength: 0)
+                        TransportControls(model: music, isPlaying: snapshot.isPlaying, size: 12)
                     }
-                    .padding(.leading, h + 2)
-                    .padding(.trailing, 12)
+                    .padding(.leading, h + 4)
+                    .padding(.trailing, 10)
                 }
             case .musicFull:
                 if let snapshot = music.current {
