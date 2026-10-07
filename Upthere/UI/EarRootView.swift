@@ -85,7 +85,7 @@ struct EarRootView: View {
 
 /// Fills the whole container; the mask decides what shows.
 /// Classic: solid black, so the ears read as part of the notch.
-/// Aurora: see `AuroraFill`.
+/// Aurora: see `AuroraFill`. Clear: see `ClearGlassFill`.
 private struct Background: View {
     let model: NotchViewModel
     let side: NotchSide
@@ -96,6 +96,10 @@ private struct Background: View {
         switch model.prefs.theme {
         case .aurora where earOpen:
             AuroraFill(colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side, notchHalf: notchHalf)
+        case .clear where earOpen:
+            ClearGlassFill(
+                style: model.prefs.clearGlassStyle, blackFade: model.prefs.clearBlackFade, side: side,
+                notchHalf: notchHalf)
         default:
             Color.black
         }
@@ -160,5 +164,48 @@ struct AuroraFill: View {
             }
         }
         .animation(.easeInOut(duration: 0.6), value: colors)
+    }
+}
+
+/// Plain native Liquid Glass, optionally with the black-at-the-top fade.
+/// Under the physical notch it stays black, so the notch's sides read
+/// cleanly against the glass.
+struct ClearGlassFill: View {
+    let style: GlassStyle
+    let blackFade: Bool
+    let side: NotchSide
+    let notchHalf: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = max(proxy.size.width, 1)
+            let notchEdge = min(1, notchHalf / w)
+            let inner: UnitPoint = side == .left ? .trailing : .leading
+            let outer: UnitPoint = side == .left ? .leading : .trailing
+            ZStack {
+                Rectangle().fill(.clear)
+                    .glassEffect(style == .regular ? .regular : .clear, in: Rectangle())
+                // Black under the notch, ending at its edge.
+                Rectangle().fill(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: max(0, notchEdge - 0.02)),
+                            .init(color: .black.opacity(0), location: min(1, notchEdge + (blackFade ? 0.08 : 0.005))),
+                        ], startPoint: inner, endPoint: outer))
+                if blackFade {
+                    Rectangle().fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black.opacity(0.8), location: 0.38),
+                                .init(color: .black.opacity(0), location: 1),
+                            ], startPoint: .top, endPoint: .bottom))
+                }
+            }
+        }
+        // White content on glass: keep the glass in its dark appearance.
+        .environment(\.colorScheme, .dark)
+        .animation(.smooth(duration: 0.3), value: blackFade)
     }
 }

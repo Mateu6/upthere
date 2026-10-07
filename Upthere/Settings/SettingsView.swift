@@ -47,6 +47,13 @@ struct SettingsView: View {
                 Picker("Theme", selection: $prefs.theme) {
                     ForEach(NotchTheme.allCases) { Text($0.title).tag($0) }
                 }
+                if prefs.theme == .clear {
+                    Picker("Glass", selection: $prefs.clearGlassStyle) {
+                        ForEach(GlassStyle.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    Toggle("Black gradient at the top", isOn: $prefs.clearBlackFade)
+                }
                 Picker("Display", selection: $prefs.display) {
                     ForEach(DisplayChoice.allCases) { Text($0.title).tag($0) }
                 }

@@ -27,6 +27,9 @@ enum DebugBridge {
                 case "hud-seek": model.debugShowHUD(.seek((model.nowPlaying.current?.duration ?? 200) * 0.4), side: .right)
                 case "theme-aurora": model.prefs.theme = .aurora
                 case "theme-classic": model.prefs.theme = .classic
+                case "theme-clear": model.prefs.theme = .clear
+                case "clear-fade-on": model.prefs.clearBlackFade = true
+                case "clear-fade-off": model.prefs.clearBlackFade = false
                 default: break
                 }
                 guard let dir else { return }

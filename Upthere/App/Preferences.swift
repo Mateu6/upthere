@@ -19,14 +19,24 @@ enum PlayerFilterMode: String, CaseIterable, Identifiable {
 enum NotchTheme: String, CaseIterable, Identifiable {
     case classic
     case aurora
+    case clear
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .classic: "Classic (black)"
         case .aurora: "Aurora (artwork-tinted glass)"
+        case .clear: "Clear (Liquid Glass)"
         }
     }
+}
+
+enum GlassStyle: String, CaseIterable, Identifiable {
+    case regular
+    case clear
+
+    var id: String { rawValue }
+    var title: String { self == .regular ? "Regular" : "Clear" }
 }
 
 /// How a usage figure is shown.
@@ -80,6 +90,8 @@ final class Preferences {
     var maxEarWidth: Double { didSet { save(maxEarWidth, "maxEarWidth") } }
     var display: DisplayChoice { didSet { save(display.rawValue, "display") } }
     var theme: NotchTheme { didSet { save(theme.rawValue, "theme") } }
+    var clearGlassStyle: GlassStyle { didSet { save(clearGlassStyle.rawValue, "clearGlassStyle") } }
+    var clearBlackFade: Bool { didSet { save(clearBlackFade, "clearBlackFade") } }
     var scrollToSeek: Bool { didSet { save(scrollToSeek, "scrollToSeek") } }
     var scrollForVolume: Bool { didSet { save(scrollForVolume, "scrollForVolume") } }
 
@@ -110,6 +122,8 @@ final class Preferences {
         maxEarWidth = defaults.object(forKey: "maxEarWidth") as? Double ?? 340
         display = DisplayChoice(rawValue: defaults.string(forKey: "display") ?? "") ?? .builtIn
         theme = NotchTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .classic
+        clearGlassStyle = GlassStyle(rawValue: defaults.string(forKey: "clearGlassStyle") ?? "") ?? .regular
+        clearBlackFade = defaults.object(forKey: "clearBlackFade") as? Bool ?? false
         scrollToSeek = defaults.object(forKey: "scrollToSeek") as? Bool ?? true
         scrollForVolume = defaults.object(forKey: "scrollForVolume") as? Bool ?? true
         infoSession = defaults.object(forKey: "infoSession") as? Bool ?? true
