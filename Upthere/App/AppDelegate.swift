@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let updater = Updater()
     private(set) lazy var nowPlaying = NowPlayingModel(prefs: prefs)
     private(set) lazy var claude = ClaudeModel()
+    private(set) lazy var queue = QueueModel(prefs: prefs)
     private var notch: NotchWindowController?
     private var settings: SettingsWindowController?
     private var signalSources: [DispatchSourceSignal] = []
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             nowPlaying: nowPlaying,
             claude: claude,
             prefs: prefs,
+            queue: queue,
             actions: NotchActions(
                 openSettings: { [weak self] in self?.showSettings() },
                 checkForUpdates: { [weak self] in self?.updater.checkForUpdates() },
@@ -82,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showSettings() {
         if settings == nil {
             settings = SettingsWindowController(
-                prefs: prefs, nowPlaying: nowPlaying, claude: claude, updater: updater)
+                prefs: prefs, nowPlaying: nowPlaying, claude: claude, queue: queue, updater: updater)
         }
         settings?.show()
     }

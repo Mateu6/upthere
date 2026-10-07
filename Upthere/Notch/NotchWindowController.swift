@@ -13,10 +13,14 @@ final class NotchWindowController {
     private var screenObserver: NSObjectProtocol?
     private var scrollMonitor: Any?
 
-    init(nowPlaying: NowPlayingModel, claude: ClaudeModel, prefs: Preferences, actions: NotchActions) {
+    init(
+        nowPlaying: NowPlayingModel, claude: ClaudeModel, prefs: Preferences, queue: QueueModel, actions: NotchActions
+    ) {
         self.prefs = prefs
         let screen = ScreenPicker.screen(for: prefs.display) ?? NSScreen.screens[0]
-        let model = NotchViewModel(nowPlaying: nowPlaying, claude: claude, prefs: prefs, geometry: .make(for: screen))
+        let model = NotchViewModel(
+            nowPlaying: nowPlaying, claude: claude, prefs: prefs, geometry: .make(for: screen), queue: queue)
+        model.openSettings = actions.openSettings
         viewModel = model
         left = EarWindow(side: .left, root: EarRootView(model: model, side: .left, actions: actions))
         right = EarWindow(side: .right, root: EarRootView(model: model, side: .right, actions: actions))

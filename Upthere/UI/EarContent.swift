@@ -124,6 +124,9 @@ struct RightEarContent: View {
                 .frame(width: h + 4, height: h)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Make room for the grown seek bar.
+        .offset(y: model.seekBarActive ? -4 : 0)
+        .animation(.spring(duration: 0.28, bounce: 0), value: model.seekBarActive)
         .overlay(alignment: .bottom) { progressLine(tint: tint) }
     }
 
@@ -171,7 +174,12 @@ struct RightEarContent: View {
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
                         TransportControls(model: music, isPlaying: snapshot.isPlaying)
-                        Spacer(minLength: 0)
+                        if model.showsQueue {
+                            Rectangle().fill(.white.opacity(0.15)).frame(width: 1, height: h * 0.5)
+                            QueueStrip(model: model)
+                        } else {
+                            Spacer(minLength: 0)
+                        }
                     }
                     .padding(.leading, h + 2)
                     .padding(.trailing, 12)
@@ -202,8 +210,7 @@ struct RightEarContent: View {
         case .musicBars, .musicCompact, .musicControls, .musicFull:
             if let snapshot = model.nowPlaying.current {
                 SeekBar(
-                    model: model, snapshot: snapshot, color: tint, side: .right,
-                    interactive: model.mode(.right) != .collapsed
+                    model: model, snapshot: snapshot, color: tint, interactive: model.mode(.right) != .collapsed
                 )
                 .padding(.horizontal, 8)
                 .padding(.bottom, 1)
@@ -214,7 +221,7 @@ struct RightEarContent: View {
     }
 }
 
-/// Shown in the music ear while scrolling: seek position or volume.
+/// Shown in the music ear while scrolling for volume.
 struct MusicHUDView: View {
     let hud: NotchViewModel.HUD
     let snapshot: PlaybackSnapshot
@@ -250,14 +257,12 @@ struct MusicHUDView: View {
 
     private var fraction: CGFloat {
         switch hud {
-        case .seek(let t): CGFloat(t / max(snapshot.duration ?? 1, 1))
         case .volume(let v): CGFloat(v)
         }
     }
 
     private var symbol: String {
         switch hud {
-        case .seek: "arrow.left.and.right"
         case .volume(let v):
             v == 0 ? "speaker.slash.fill" : v < 0.34 ? "speaker.wave.1.fill" : v < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
         }
@@ -265,7 +270,6 @@ struct MusicHUDView: View {
 
     private var label: String {
         switch hud {
-        case .seek(let t): "\(Theme.time(t)) / \(Theme.time(snapshot.duration ?? 0))"
         case .volume(let v): "\(Int((v * 100).rounded()))%"
         }
     }

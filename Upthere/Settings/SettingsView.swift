@@ -5,9 +5,9 @@ import SwiftUI
 final class SettingsWindowController {
     private let window: NSWindow
 
-    init(prefs: Preferences, nowPlaying: NowPlayingModel, claude: ClaudeModel, updater: Updater) {
+    init(prefs: Preferences, nowPlaying: NowPlayingModel, claude: ClaudeModel, queue: QueueModel, updater: Updater) {
         let controller = NSHostingController(
-            rootView: SettingsView(prefs: prefs, nowPlaying: nowPlaying, claude: claude, updater: updater))
+            rootView: SettingsView(prefs: prefs, nowPlaying: nowPlaying, claude: claude, queue: queue, updater: updater))
         window = NSWindow(contentViewController: controller)
         window.title = "Upthere Settings"
         window.styleMask = [.titled, .closable]
@@ -26,7 +26,11 @@ struct SettingsView: View {
     @Bindable var prefs: Preferences
     let nowPlaying: NowPlayingModel
     let claude: ClaudeModel
+    let queue: QueueModel
     @Bindable var updater: Updater
+    @State private var spotifyConnected = false
+    @State private var spotifyBusy = false
+    @State private var spotifyError: String?
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var hooksInstalled = HookInstaller.isInstalled
@@ -104,6 +108,36 @@ struct SettingsView: View {
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
+
+            Section {
+                Toggle("Show upcoming songs (when only music is shown)", isOn: $prefs.showQueue)
+                TextField("Spotify Client ID", text: $prefs.spotifyClientID, prompt: Text("from developer.spotify.com"))
+                    .disableAutocorrection(true)
+                LabeledContent("Spotify") {
+                    if spotifyConnected {
+                        Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Button("Disconnect") {
+                            queue.disconnectSpotify()
+                            spotifyConnected = false
+                        }
+                    } else {
+                        Button(spotifyBusy ? "Waiting for browser…" : "Connect Spotify") { connectSpotify() }
+                            .disabled(spotifyBusy || prefs.spotifyClientID.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+                if let spotifyError {
+                    Text(spotifyError).foregroundStyle(.red).font(.caption)
+                }
+            } header: {
+                Text("Up Next")
+            } footer: {
+                Text(
+                    "Spotify only shares its queue through its Web API. Create a free app at developer.spotify.com/dashboard, add the redirect URI \(SpotifyAuth.redirectURI), select Web API, and paste its Client ID here. Jumping to a song needs Spotify Premium. Apple Music works without setup (playlist order; shuffle isn't exposed)."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            }
+            .onAppear { spotifyConnected = queue.spotify.isConnected }
 
             Section {
                 Toggle("Show Claude Code activity", isOn: $prefs.claudeEnabled)
@@ -189,6 +223,21 @@ struct SettingsView: View {
             .labelsHidden()
             .fixedSize()
             .disabled(!isOn.wrappedValue)
+        }
+    }
+
+    private func connectSpotify() {
+        spotifyBusy = true
+        spotifyError = nil
+        Task {
+            do {
+                try await queue.connectSpotify(clientID: prefs.spotifyClientID.trimmingCharacters(in: .whitespaces))
+                spotifyConnected = true
+            } catch {
+                spotifyError = error.localizedDescription
+            }
+            spotifyBusy = false
+            NSApp.activate()
         }
     }
 

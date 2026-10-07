@@ -25,7 +25,8 @@ enum DebugBridge {
                 case "expanded-right": model.debugSet(left: .collapsed, right: .expanded)
                 case "check-updates": actions.checkForUpdates()
                 case "hud-volume": model.debugShowHUD(.volume(0.62), side: .right)
-                case "hud-seek": model.debugShowHUD(.seek((model.nowPlaying.current?.duration ?? 200) * 0.4), side: .right)
+                case "seek-active": model.previewSeek((model.nowPlaying.current?.duration ?? 200) * 0.4)
+                case "seek-end": model.endSeek(at: nil, after: .zero)
                 case "theme-aurora": model.prefs.theme = .aurora
                 case "theme-classic": model.prefs.theme = .classic
                 case "theme-clear": model.prefs.theme = .clear

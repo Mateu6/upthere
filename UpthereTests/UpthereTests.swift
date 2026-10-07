@@ -306,3 +306,33 @@ struct PerEarTests {
         #expect(!model.isAnyEarOpen)
     }
 }
+
+struct UpNextTests {
+    @Test func pkceMatchesRFC7636() {
+        #expect(PKCE.challenge(for: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk") == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+        let verifier = PKCE.verifier()
+        #expect(verifier.count == 64)
+        #expect(PKCE.formEncode(["redirect_uri": "http://127.0.0.1:1/cb", "a": "b c"]) == "a=b%20c&redirect_uri=http%3A%2F%2F127.0.0.1%3A1%2Fcb")
+    }
+
+    @Test func parsesLoopbackCallback() {
+        let request = "GET /callback?code=abc123&state=xyz HTTP/1.1\r\nHost: 127.0.0.1:47863\r\n\r\n"
+        #expect(LoopbackReceiver.parseCallback(request) == ["code": "abc123", "state": "xyz"])
+        #expect(LoopbackReceiver.parseCallback("GET /favicon.ico HTTP/1.1\r\n\r\n") == nil)
+    }
+
+    @Test func parsesSpotifyQueue() {
+        let json = #"{"currently_playing":{"name":"Now"},"queue":[{"name":"Next","artists":[{"name":"A"},{"name":"B"}],"album":{"images":[{"url":"https://i/640","width":640},{"url":"https://i/64","width":64}]}},{"name":"Episode","show":{"name":"Pod"},"images":[{"url":"https://i/e","width":300}]}]}"#
+        let items = SpotifyAPI.parseQueue(Data(json.utf8))
+        #expect(items.count == 2)
+        #expect(items[0].title == "Next" && items[0].artist == "A, B" && items[0].position == 0)
+        #expect(items[0].artworkURL?.absoluteString == "https://i/64")
+        #expect(items[1].artist == "Pod" && items[1].position == 1)
+    }
+
+    @Test func parsesMusicQueue() {
+        let items = MusicQueue.parse("One\tArtist 1\nTwo\tArtist 2\n")
+        #expect(items.map(\.title) == ["One", "Two"])
+        #expect(items[1].artist == "Artist 2" && items[1].position == 1)
+    }
+}

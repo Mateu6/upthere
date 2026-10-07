@@ -42,6 +42,8 @@ final class NotchViewModel {
     let nowPlaying: NowPlayingModel
     let claude: ClaudeModel
     let prefs: Preferences
+    let queue: QueueModel
+    @ObservationIgnored var openSettings: () -> Void = {}
 
     var geometry: NotchGeometry
     private(set) var leftMode: EarMode = .collapsed
@@ -50,6 +52,11 @@ final class NotchViewModel {
 
     /// A collapsed ear under the cursor swells slightly before it peeks.
     private(set) var nudgedSide: NotchSide?
+    /// The seek bar is grown (hovered 200 ms, dragged or scroll-seeking);
+    /// the music ear's content moves up to make room.
+    private(set) var seekBarActive = false
+    /// Where a drag or scroll would seek to, shown in the bar itself.
+    private(set) var seekPreview: TimeInterval?
     private(set) var hud: HUD?
     private(set) var hudSide: NotchSide = .right
 
@@ -60,11 +67,18 @@ final class NotchViewModel {
     @ObservationIgnored private var lastScroll = Date.distantPast
     @ObservationIgnored private var seekTask: Task<Void, Never>?
     @ObservationIgnored private var hudTask: Task<Void, Never>?
+    @ObservationIgnored private var seekHoverTask: Task<Void, Never>?
+    @ObservationIgnored private var seekBarHovered = false
+    @ObservationIgnored private var seekReleaseTask: Task<Void, Never>?
 
-    init(nowPlaying: NowPlayingModel, claude: ClaudeModel, prefs: Preferences, geometry: NotchGeometry) {
+    init(
+        nowPlaying: NowPlayingModel, claude: ClaudeModel, prefs: Preferences, geometry: NotchGeometry,
+        queue: QueueModel? = nil
+    ) {
         self.nowPlaying = nowPlaying
         self.claude = claude
         self.prefs = prefs
+        self.queue = queue ?? QueueModel(prefs: prefs)
         self.geometry = geometry
         observeTrack()
     }
@@ -84,6 +98,7 @@ final class NotchViewModel {
         defer {
             lastTrackKey = key
             tracksObserved = true
+            if showsQueue { queue.refresh(for: nowPlaying.current) }
         }
         // Not on launch, and not when playback merely stops.
         guard tracksObserved, prefs.announceTracks, let key, key != lastTrackKey,
@@ -173,7 +188,7 @@ final class NotchViewModel {
         case .none: 0
         case .musicBars, .claudeBadge: unit + 4
         case .musicCompact: unit * 2
-        case .musicControls(let expanded): expanded ? 230 : 150
+        case .musicControls: showsQueue ? 360 : 150
         case .musicFull(let expanded): expanded ? 340 : 300
         case .claudeTool(let expanded): expanded ? 300 : 190
         }
@@ -182,6 +197,13 @@ final class NotchViewModel {
     private func clamp(_ width: CGFloat, room: CGFloat) -> CGFloat {
         guard width > 0 else { return 0 }
         return min(width, CGFloat(prefs.maxEarWidth), max(0, room - 8 - Theme.shoulderRadius))
+    }
+
+    /// Up Next: the right ear of a music-only notch, when open.
+    var showsQueue: Bool {
+        guard prefs.showQueue, rightMode != .collapsed else { return false }
+        if case .musicControls = content.right { return true }
+        return false
     }
 
     /// The seek/volume overlay needs a widened music ear.
@@ -367,6 +389,7 @@ final class NotchViewModel {
         case .center: return
         }
         updateOutsideClickMonitor()
+        if side == .right && showsQueue { queue.refresh(for: nowPlaying.current) }
     }
 
     /// While an ear is expanded, a click anywhere else collapses it. The
@@ -390,7 +413,6 @@ final class NotchViewModel {
     // MARK: Scrolling (seek / volume)
 
     enum HUD: Equatable {
-        case seek(TimeInterval)
         case volume(Float)
     }
 
@@ -416,21 +438,22 @@ final class NotchViewModel {
             scrollAxis = abs(dx) > abs(dy) ? .horizontal : .vertical
         }
         let precise = event.hasPreciseScrollingDeltas
+        // Sideways over Up Next scrolls the list, not the track.
+        if scrollAxis == .horizontal && side == .right && showsQueue { return false }
         if mode(side) == .collapsed { setMode(side, .peek) }
 
         switch scrollAxis {
         case .horizontal where prefs.scrollToSeek:
             guard let duration = current.duration, duration > 0 else { return true }
-            let base: TimeInterval
-            if case .seek(let t) = hud { base = t } else { base = current.position() }
+            let base = seekPreview ?? current.position()
             let target = min(duration, max(0, base + Double(dx) * (precise ? 0.35 : 4)))
-            showHUD(.seek(target), side: side, hold: .milliseconds(900))
+            previewSeek(target)
             let delay = event.phase.contains(.ended) ? 0 : 280
             seekTask?.cancel()
             seekTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(delay))
                 guard !Task.isCancelled else { return }
-                self?.nowPlaying.send(.seek(target))
+                self?.endSeek(at: target, after: .milliseconds(700))
             }
         case .vertical where prefs.scrollForVolume:
             let base: Float
@@ -443,14 +466,39 @@ final class NotchViewModel {
         return true
     }
 
-    /// Seek time shown in the ear while the seek bar is dragged (nil hides it).
-    func previewSeek(_ seconds: TimeInterval?, side: NotchSide) {
-        if let seconds {
-            hudTask?.cancel()
-            hudSide = side
-            hud = .seek(seconds)
-        } else {
-            showHUD(hud ?? .seek(0), side: side, hold: .milliseconds(500))
+    // MARK: Seek bar
+
+    func seekBarHover(_ inside: Bool) {
+        seekBarHovered = inside
+        seekHoverTask?.cancel()
+        if inside {
+            seekHoverTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled, let self, self.seekBarHovered else { return }
+                self.seekBarActive = true
+            }
+        } else if seekPreview == nil {
+            seekBarActive = false
+        }
+    }
+
+    /// While dragging or scrolling: grow the bar and show the target in it.
+    func previewSeek(_ seconds: TimeInterval) {
+        seekReleaseTask?.cancel()
+        seekPreview = seconds
+        if !seekBarActive { seekBarActive = true }
+    }
+
+    /// Seeks (if `commit`) and lets the preview go shortly after, so the bar
+    /// doesn't snap back before the player catches up.
+    func endSeek(at seconds: TimeInterval?, after delay: Duration = .milliseconds(450)) {
+        if let seconds { nowPlaying.send(.seek(seconds)) }
+        seekReleaseTask?.cancel()
+        seekReleaseTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.seekPreview = nil
+            if !self.seekBarHovered { self.seekBarActive = false }
         }
     }
 
