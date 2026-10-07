@@ -1,0 +1,10 @@
+// Shared build settings. Signing defaults to ad-hoc ("Sign to Run Locally")
+// so the project builds without an Apple Developer account.
+// Put your own team in Config/Local.xcconfig (gitignored), e.g.:
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   CODE_SIGN_IDENTITY = Developer ID Application
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"
