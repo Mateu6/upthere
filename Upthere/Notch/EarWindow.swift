@@ -20,6 +20,11 @@ final class EarWindow {
 
     private var geometry: NotchGeometry?
     private var containerWidth: CGFloat = 0
+    private var maxEar: CGFloat = 0
+    /// Off for the Glass theme: SwiftUI shapes the glass and clips the
+    /// content itself (so the glass rim follows the ear), and the layer
+    /// mask just bounds the widest ear.
+    private var layerMaskAnimates = true
     /// Ear width the mask is heading to.
     private var ear: CGFloat = 0
     /// Ear width the panel frame currently covers.
@@ -40,8 +45,10 @@ final class EarWindow {
     }
 
     /// Lays out for a screen. `maxEar` is the widest the ear can get.
-    func configure(geometry: NotchGeometry, maxEar: CGFloat) {
+    func configure(geometry: NotchGeometry, maxEar: CGFloat, layerMask: Bool) {
         self.geometry = geometry
+        self.maxEar = maxEar
+        layerMaskAnimates = layerMask
         let width = geometry.notchWidth / 2 + maxEar + EarMask.shoulderRadius
         containerWidth = width
         CATransaction.begin()
@@ -50,7 +57,8 @@ final class EarWindow {
         container.frame = CGRect(
             x: side == .left ? content.bounds.width - width : 0, y: 0, width: width, height: geometry.height)
         mask.frame = CGRect(x: 0, y: 0, width: width, height: geometry.height)
-        mask.path = path(ear: ear)
+        mask.removeAllAnimations()
+        mask.path = path(ear: layerMask ? ear : maxEar)
         CATransaction.commit()
         place(ear: max(ear, visibleEar))
     }
@@ -63,23 +71,30 @@ final class EarWindow {
         // Grow the window first so the mask never animates into clipped space.
         if newEar > visibleEar { place(ear: newEar) }
 
+        let spring = CASpringAnimation(perceptualDuration: Theme.earDuration, bounce: 0)
+        let settle: TimeInterval = animated ? spring.settlingDuration : 0
+        guard layerMaskAnimates else {
+            scheduleShrink(after: settle, newEar: newEar)
+            return
+        }
         let target = path(ear: newEar)
-        var settle: TimeInterval = 0
         if animated {
-            let spring = CASpringAnimation(perceptualDuration: Theme.earDuration, bounce: 0)
             spring.keyPath = "path"
             spring.fromValue = mask.presentation()?.path ?? mask.path
             spring.toValue = target
             spring.duration = spring.settlingDuration
             spring.preferredFrameRateRange = Self.nativeFrameRate(for: geometry)
             mask.add(spring, forKey: "path")
-            settle = spring.settlingDuration
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         mask.path = target
         CATransaction.commit()
 
+        scheduleShrink(after: settle, newEar: newEar)
+    }
+
+    private func scheduleShrink(after settle: TimeInterval, newEar: CGFloat) {
         guard newEar < visibleEar else { return }
         shrinkTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(min(settle, 0.8)))

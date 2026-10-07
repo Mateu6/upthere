@@ -26,17 +26,18 @@ enum NotchTheme: String, CaseIterable, Identifiable {
         switch self {
         case .classic: "Classic (black)"
         case .aurora: "Aurora (artwork-tinted glass)"
-        case .clear: "Clear (Liquid Glass)"
+        case .clear: "Glass (Liquid Glass)"
         }
     }
 }
 
-enum GlassStyle: String, CaseIterable, Identifiable {
-    case regular
+/// The Glass theme's tint.
+enum GlassTint: String, CaseIterable, Identifiable {
     case clear
+    case color
 
     var id: String { rawValue }
-    var title: String { self == .regular ? "Regular" : "Clear" }
+    var title: String { self == .clear ? "Clear" : "Album color" }
 }
 
 /// How a usage figure is shown.
@@ -92,8 +93,10 @@ final class Preferences {
     var earCloseDelay: Double { didSet { save(earCloseDelay, "earCloseDelay") } }
     var display: DisplayChoice { didSet { save(display.rawValue, "display") } }
     var theme: NotchTheme { didSet { save(theme.rawValue, "theme") } }
-    var clearGlassStyle: GlassStyle { didSet { save(clearGlassStyle.rawValue, "clearGlassStyle") } }
+    var glassTint: GlassTint { didSet { save(glassTint.rawValue, "glassTint") } }
     var clearBlackFade: Bool { didSet { save(clearBlackFade, "clearBlackFade") } }
+    /// Briefly open the music ear with title and artist when the track changes.
+    var announceTracks: Bool { didSet { save(announceTracks, "announceTracks") } }
     var scrollToSeek: Bool { didSet { save(scrollToSeek, "scrollToSeek") } }
     var scrollForVolume: Bool { didSet { save(scrollForVolume, "scrollForVolume") } }
 
@@ -125,8 +128,9 @@ final class Preferences {
         earCloseDelay = defaults.object(forKey: "earCloseDelay") as? Double ?? 0.3
         display = DisplayChoice(rawValue: defaults.string(forKey: "display") ?? "") ?? .builtIn
         theme = NotchTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .classic
-        clearGlassStyle = GlassStyle(rawValue: defaults.string(forKey: "clearGlassStyle") ?? "") ?? .regular
+        glassTint = GlassTint(rawValue: defaults.string(forKey: "glassTint") ?? "") ?? .clear
         clearBlackFade = defaults.object(forKey: "clearBlackFade") as? Bool ?? false
+        announceTracks = defaults.object(forKey: "announceTracks") as? Bool ?? true
         scrollToSeek = defaults.object(forKey: "scrollToSeek") as? Bool ?? true
         scrollForVolume = defaults.object(forKey: "scrollForVolume") as? Bool ?? true
         infoSession = defaults.object(forKey: "infoSession") as? Bool ?? true

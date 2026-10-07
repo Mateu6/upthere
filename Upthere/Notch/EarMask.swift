@@ -43,3 +43,21 @@ nonisolated enum EarMask {
         return path
     }
 }
+
+import SwiftUI
+
+/// `EarMask` as a SwiftUI shape, so Liquid Glass can take the ear's exact
+/// outline (its specular rim then follows the shoulders and corners).
+/// The rect spans the notch half plus the ear (with its shoulder).
+struct EarMaskShape: Shape {
+    var side: NotchSide
+    var notchHalf: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let ear = max(0, rect.width - notchHalf - EarMask.shoulderRadius)
+        let cg = EarMask.path(side: side, width: rect.width, height: rect.height, notchHalf: notchHalf, ear: rect.width > notchHalf + 0.5 ? ear : 0)
+        // EarMask is bottom-left based; SwiftUI is top-left.
+        var flip = CGAffineTransform(translationX: rect.minX, y: rect.maxY).scaledBy(x: 1, y: -1)
+        return Path(cg.copy(using: &flip) ?? cg)
+    }
+}

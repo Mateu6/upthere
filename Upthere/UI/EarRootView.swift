@@ -35,27 +35,64 @@ struct EarRootView: View {
         let width = side == .left ? model.leftWidth : model.rightWidth
         let height = model.geometry.height
         let half = model.geometry.notchWidth / 2
+        let alignment: Alignment = side == .left ? .trailing : .leading
 
-        ZStack {
-            Background(model: model, side: side, notchHalf: half, earOpen: width > 0)
-            HStack(spacing: 0) {
-                if side == .left {
-                    Spacer(minLength: 0)
-                    ear(width: width, height: height)
-                    notchHalf(width: half)
-                } else {
-                    notchHalf(width: half)
-                    ear(width: width, height: height)
-                    Spacer(minLength: 0)
+        Group {
+            if model.prefs.theme == .clear {
+                glassBand(width: width, height: height, half: half, alignment: alignment)
+            } else {
+                ZStack {
+                    Background(model: model, side: side, notchHalf: half, earOpen: width > 0)
+                    content(width: width, height: height, half: half)
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
         .contextMenu {
             Button("Settings…", action: actions.openSettings)
             Button("Check for Updates…", action: actions.checkForUpdates)
             Divider()
             Button("Quit Upthere", action: actions.quit)
+        }
+    }
+
+    private func content(width: CGFloat, height: CGFloat, half: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            if side == .left {
+                Spacer(minLength: 0)
+                ear(width: width, height: height)
+                notchHalf(width: half)
+            } else {
+                notchHalf(width: half)
+                ear(width: width, height: height)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    /// Glass theme: the glass takes the ear's exact shape, so its native rim
+    /// highlight follows the shoulder and corners. The shape's frame springs
+    /// (same spring as the layer mask in the other themes) while the content
+    /// stays laid out at its target width and is masked by the same shape.
+    private func glassBand(width: CGFloat, height: CGFloat, half: CGFloat, alignment: Alignment) -> some View {
+        let shape = EarMaskShape(side: side, notchHalf: half)
+        let bandWidth = width + Theme.shoulderRadius + half
+        let spring = Animation.spring(duration: Theme.earDuration, bounce: 0)
+        return ZStack(alignment: alignment) {
+            GlassFill(
+                tinted: model.prefs.glassTint == .color, blackFade: model.prefs.clearBlackFade,
+                colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side, notchHalf: half,
+                shape: shape
+            )
+            .frame(width: bandWidth, height: height)
+            .animation(spring, value: bandWidth)
+
+            content(width: width, height: height, half: half)
+                .mask(alignment: alignment) {
+                    shape
+                        .frame(width: bandWidth, height: height)
+                        .animation(spring, value: bandWidth)
+                }
         }
     }
 
@@ -96,10 +133,6 @@ private struct Background: View {
         switch model.prefs.theme {
         case .aurora where earOpen:
             AuroraFill(colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side, notchHalf: notchHalf)
-        case .clear where earOpen:
-            ClearGlassFill(
-                style: model.prefs.clearGlassStyle, blackFade: model.prefs.clearBlackFade,
-                colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side)
         default:
             Color.black
         }
@@ -167,43 +200,61 @@ struct AuroraFill: View {
     }
 }
 
-/// Native Liquid Glass with a light tint from the cover (much subtler than
-/// Aurora), optionally with the black-at-the-top fade. Nothing is painted
-/// under the notch: the glass runs behind it, so the physical notch keeps
-/// its own rounded shape.
-struct ClearGlassFill: View {
-    let style: GlassStyle
+/// Native Liquid Glass shaped like the ear, in any combination of:
+///  - tint: clear, or tinted with the cover's colors (lighter than Aurora);
+///  - black: Aurora's black, at the top and towards the notch.
+/// Uses the clear glass variant in its normal appearance: the same see-
+/// through glass, with bright rim highlights, as Control Center.
+struct GlassFill: View {
+    let tinted: Bool
     let blackFade: Bool
     let colors: [Color]
     let side: NotchSide
+    let notchHalf: CGFloat
+    let shape: EarMaskShape
 
     var body: some View {
-        let inner: UnitPoint = side == .left ? .trailing : .leading
-        let outer: UnitPoint = side == .left ? .leading : .trailing
-        ZStack {
-            Rectangle().fill(.clear)
-                .glassEffect((style == .regular ? Glass.regular : .clear).tint(colors[0].opacity(0.14)), in: Rectangle())
-            // A hint of the cover's colors along the bottom.
-            Rectangle()
-                .fill(LinearGradient(colors: colors, startPoint: inner, endPoint: outer))
-                .opacity(0.28)
-                .mask(
-                    LinearGradient(
-                        stops: [.init(color: .clear, location: 0.35), .init(color: .white, location: 1)],
-                        startPoint: .top, endPoint: .bottom))
-            if blackFade {
-                Rectangle().fill(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black.opacity(0.75), location: 0.38),
-                            .init(color: .black.opacity(0), location: 1),
-                        ], startPoint: .top, endPoint: .bottom))
+        GeometryReader { proxy in
+            let w = max(proxy.size.width, 1)
+            let notchEdge = min(1, notchHalf / w)
+            let fadeEnd = min(1, (notchHalf + 28) / w)
+            let inner: UnitPoint = side == .left ? .trailing : .leading
+            let outer: UnitPoint = side == .left ? .leading : .trailing
+            ZStack {
+                if tinted {
+                    // A wash of the cover's colors along the bottom.
+                    shape
+                        .fill(LinearGradient(colors: colors, startPoint: inner, endPoint: outer))
+                        .opacity(0.32)
+                        .mask(
+                            LinearGradient(
+                                stops: [.init(color: .clear, location: 0.3), .init(color: .white, location: 1)],
+                                startPoint: .top, endPoint: .bottom))
+                }
+                if blackFade {
+                    // Aurora's black: towards the notch, and from the top.
+                    shape.fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black.opacity(0.75), location: notchEdge * 0.7),
+                                .init(color: .black.opacity(0.35), location: notchEdge),
+                                .init(color: .black.opacity(0), location: fadeEnd),
+                            ], startPoint: inner, endPoint: outer))
+                    shape.fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black.opacity(0.85), location: 0.38),
+                                .init(color: .black.opacity(0.05), location: 1),
+                            ], startPoint: .top, endPoint: .bottom))
+                }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .glassEffect(tinted ? Glass.clear.tint(colors[0].opacity(0.25)) : .clear, in: shape)
         }
-        // White content on glass: keep the glass in its dark appearance.
-        .environment(\.colorScheme, .dark)
         .animation(.smooth(duration: 0.3), value: blackFade)
+        .animation(.smooth(duration: 0.3), value: tinted)
         .animation(.easeInOut(duration: 0.6), value: colors)
     }
 }

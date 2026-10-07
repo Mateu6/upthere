@@ -31,6 +31,8 @@ enum DebugBridge {
                 case "theme-clear": model.prefs.theme = .clear
                 case "clear-fade-on": model.prefs.clearBlackFade = true
                 case "clear-fade-off": model.prefs.clearBlackFade = false
+                case "glass-clear": model.prefs.glassTint = .clear
+                case "glass-color": model.prefs.glassTint = .color
                 default: break
                 }
                 guard let dir else { return }

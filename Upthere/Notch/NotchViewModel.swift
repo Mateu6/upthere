@@ -66,6 +66,39 @@ final class NotchViewModel {
         self.claude = claude
         self.prefs = prefs
         self.geometry = geometry
+        observeTrack()
+    }
+
+    // MARK: Track announcements
+
+    @ObservationIgnored private var lastTrackKey: String?
+    @ObservationIgnored private var tracksObserved = false
+
+    /// When the track changes, briefly open the ear that shows the title.
+    private func observeTrack() {
+        let key = withObservationTracking {
+            nowPlaying.current?.trackKey
+        } onChange: { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.observeTrack() } }
+        }
+        defer {
+            lastTrackKey = key
+            tracksObserved = true
+        }
+        // Not on launch, and not when playback merely stops.
+        guard tracksObserved, prefs.announceTracks, let key, key != lastTrackKey,
+            nowPlaying.current?.isPlaying == true
+        else { return }
+        let side: NotchSide = prefs.claudeEnabled && claude.isLive ? .right : .left
+        guard mode(side) == .collapsed else { return }
+        setMode(side, .peek)
+        closeTasks.removeValue(forKey: side)?.cancel()
+        closeTasks[side] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3.5))
+            guard !Task.isCancelled, let self else { return }
+            self.closeTasks[side] = nil
+            if self.regionUnderCursor() != side { self.collapse(side) }
+        }
     }
 
     // MARK: Presentation

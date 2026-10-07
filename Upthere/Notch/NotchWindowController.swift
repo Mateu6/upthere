@@ -39,8 +39,9 @@ final class NotchWindowController {
 
     private func configure() {
         let g = viewModel.geometry
-        left.configure(geometry: g, maxEar: viewModel.maxEarWidth(room: g.leftRoom))
-        right.configure(geometry: g, maxEar: viewModel.maxEarWidth(room: g.rightRoom))
+        let layerMask = prefs.theme != .clear
+        left.configure(geometry: g, maxEar: viewModel.maxEarWidth(room: g.leftRoom), layerMask: layerMask)
+        right.configure(geometry: g, maxEar: viewModel.maxEarWidth(room: g.rightRoom), layerMask: layerMask)
         left.setEar(viewModel.leftWidth, animated: false)
         right.setEar(viewModel.rightWidth, animated: false)
     }
@@ -68,6 +69,7 @@ final class NotchWindowController {
         withObservationTracking {
             _ = prefs.display
             _ = prefs.maxEarWidth
+            _ = prefs.theme
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {

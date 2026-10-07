@@ -48,11 +48,11 @@ struct SettingsView: View {
                     ForEach(NotchTheme.allCases) { Text($0.title).tag($0) }
                 }
                 if prefs.theme == .clear {
-                    Picker("Glass", selection: $prefs.clearGlassStyle) {
-                        ForEach(GlassStyle.allCases) { Text($0.title).tag($0) }
+                    Picker("Glass", selection: $prefs.glassTint) {
+                        ForEach(GlassTint.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    Toggle("Black gradient at the top", isOn: $prefs.clearBlackFade)
+                    Toggle("Black gradient (like Aurora)", isOn: $prefs.clearBlackFade)
                 }
                 Picker("Display", selection: $prefs.display) {
                     ForEach(DisplayChoice.allCases) { Text($0.title).tag($0) }
@@ -90,6 +90,7 @@ struct SettingsView: View {
                 LabeledContent("Keep paused music for") {
                     Stepper("\(Int(prefs.pausedLingerMinutes)) min", value: $prefs.pausedLingerMinutes, in: 0...60, step: 1)
                 }
+                Toggle("Show title and artist when the track changes", isOn: $prefs.announceTracks)
                 Toggle("Scroll sideways on the music ear to seek", isOn: $prefs.scrollToSeek)
                 Toggle("Scroll up/down on the music ear for volume", isOn: $prefs.scrollForVolume)
                 Toggle("Use MediaRemote adapter (all players)", isOn: $prefs.useMediaRemoteAdapter)
