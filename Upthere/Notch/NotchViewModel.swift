@@ -329,8 +329,10 @@ final class NotchViewModel {
     #endif
 
     /// Click on an ear: expand it, or back to a peek if it's expanded.
+    /// Music ears don't expand: everything (seek bar included) is already
+    /// there on hover.
     func tap(_ side: NotchSide) {
-        guard side != .center else { return }
+        guard side != .center, !showsMusic(side) else { return }
         openTasks.removeValue(forKey: side)?.cancel()
         if mode(side) == .expanded {
             setMode(side, .peek)
@@ -439,6 +441,17 @@ final class NotchViewModel {
             return false
         }
         return true
+    }
+
+    /// Seek time shown in the ear while the seek bar is dragged (nil hides it).
+    func previewSeek(_ seconds: TimeInterval?, side: NotchSide) {
+        if let seconds {
+            hudTask?.cancel()
+            hudSide = side
+            hud = .seek(seconds)
+        } else {
+            showHUD(hud ?? .seek(0), side: side, hold: .milliseconds(500))
+        }
     }
 
     private func showHUD(_ value: HUD, side: NotchSide, hold: Duration) {

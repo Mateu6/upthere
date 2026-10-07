@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if prefs.claudeEnabled { claude.start() }
         HookInstaller.refreshInstalledHelperIfNeeded()
         syncClaudePreferences()
+        syncVisualizer()
         updater.start()
 
         notch = NotchWindowController(
@@ -39,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        AudioVisualizer.shared.stop()
         nowPlaying.stop()
         claude.stop()
     }
@@ -50,6 +52,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } onChange: { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncClaudePreferences() } }
         }
+    }
+
+    /// Taps the player's audio only while music plays with the live
+    /// visualizer on.
+    private func syncVisualizer() {
+        let target = withObservationTracking { () -> String? in
+            guard prefs.liveVisualizer, let current = nowPlaying.current, current.isPlaying else { return nil }
+            return current.parentBundleID ?? current.bundleID
+        } onChange: { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncVisualizer() } }
+        }
+        if !prefs.liveVisualizer { AudioVisualizer.shared.resetFailures() }
+        AudioVisualizer.shared.run(for: target)
     }
 
     /// `kill`/logout send signals that skip applicationWillTerminate; route

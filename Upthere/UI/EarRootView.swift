@@ -203,8 +203,8 @@ struct AuroraFill: View {
 /// Native Liquid Glass shaped like the ear, in any combination of:
 ///  - tint: clear, or tinted with the cover's colors (lighter than Aurora);
 ///  - black: Aurora's black, at the top and towards the notch.
-/// Uses the clear glass variant in its normal appearance: the same see-
-/// through glass, with bright rim highlights, as Control Center.
+/// Uses the clear glass variant (like Control Center), in its dark
+/// appearance so it stays see-through rather than milky.
 struct GlassFill: View {
     let tinted: Bool
     let blackFade: Bool
@@ -251,8 +251,12 @@ struct GlassFill: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
-            .glassEffect(tinted ? Glass.clear.tint(colors[0].opacity(0.25)) : .clear, in: shape)
+            // Clear variant: the strongest lensing. Interactive: native
+            // highlight and flex under the pointer.
+            .glassEffect((tinted ? Glass.clear.tint(colors[0].opacity(0.25)) : .clear).interactive(), in: shape)
         }
+        // Dark appearance: see-through without the milky white haze.
+        .environment(\.colorScheme, .dark)
         .animation(.smooth(duration: 0.3), value: blackFade)
         .animation(.smooth(duration: 0.3), value: tinted)
         .animation(.easeInOut(duration: 0.6), value: colors)

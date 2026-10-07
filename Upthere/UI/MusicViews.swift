@@ -38,8 +38,10 @@ struct ArtworkThumb: View {
             .offset(x: size * 0.14, y: size * 0.12)
             .animation(.spring(duration: 0.3, bounce: 0), value: badge)
         }
-        .opacity(dimmed ? 0.55 : 1)
+        .opacity(dimmed ? 0.5 : 1)
+        .saturation(dimmed ? 0.6 : 1)
         .animation(.easeOut(duration: 0.2), value: artwork)
+        .animation(.smooth(duration: 0.45), value: dimmed)
     }
 }
 
@@ -114,39 +116,53 @@ struct HoverButtonStyle: ButtonStyle {
     }
 }
 
-/// Progress line that becomes a seek bar when `interactive`.
-struct Scrubber: View {
-    let model: NowPlayingModel
+/// The progress line along the bottom of the music ear, always grabbable:
+/// it thickens under the pointer, and dragging (or clicking) seeks, showing
+/// the target time in the ear while you drag.
+struct SeekBar: View {
+    let model: NotchViewModel
     let snapshot: PlaybackSnapshot
     let color: NSColor
-    var interactive = false
+    let side: NotchSide
+    /// Only when the ear is open (a collapsed ear opens on hover first).
+    var interactive: Bool
+
+    @State private var hovering = false
     @State private var dragFraction: Double?
 
     var body: some View {
+        let active = interactive && (hovering || dragFraction != nil)
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 if let dragFraction {
-                    Capsule().fill(.white.opacity(0.16))
+                    Capsule().fill(.white.opacity(0.18))
                     Capsule().fill(Color(nsColor: color))
-                        .frame(width: proxy.size.width * dragFraction)
+                        .frame(width: max(4, proxy.size.width * dragFraction))
                 } else {
-                    ProgressLineView(snapshot: snapshot, color: color)
+                    ProgressLineView(snapshot: snapshot, color: color.withAlphaComponent(0.9))
                 }
             }
-            .frame(height: interactive ? 3 : 2)
-            .frame(maxHeight: .infinity)
+            .frame(height: active ? 5 : 1.5)
+            .frame(maxHeight: .infinity, alignment: .bottom)
             .contentShape(Rectangle())
+            .onHover { hovering = $0 }
             .gesture(interactive ? seekGesture(width: proxy.size.width) : nil)
         }
-        .frame(height: interactive ? 10 : 2)
+        .frame(height: interactive ? 12 : 1.5)
+        .animation(.spring(duration: 0.22, bounce: 0), value: active)
     }
 
     private func seekGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
-            .onChanged { dragFraction = min(1, max(0, $0.location.x / max(width, 1))) }
+            .onChanged { value in
+                let fraction = min(1, max(0, value.location.x / max(width, 1)))
+                dragFraction = fraction
+                if let duration = snapshot.duration { model.previewSeek(fraction * duration, side: side) }
+            }
             .onEnded { value in
                 let fraction = min(1, max(0, value.location.x / max(width, 1)))
-                if let duration = snapshot.duration { model.send(.seek(fraction * duration)) }
+                if let duration = snapshot.duration { model.nowPlaying.send(.seek(fraction * duration)) }
+                model.previewSeek(nil, side: side)
                 dragFraction = nil
             }
     }

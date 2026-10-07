@@ -131,9 +131,11 @@ struct RightEarContent: View {
         ZStack {
             switch anchor {
             case .bars:
-                AudioBarsView(isPlaying: music.current?.isPlaying ?? false, color: tint)
-                    .frame(width: 16, height: h * 0.36)
-                    .transition(.blurReplace)
+                AudioBarsView(
+                    isPlaying: music.current?.isPlaying ?? false, color: tint, live: model.prefs.liveVisualizer
+                )
+                .frame(width: 16, height: h * 0.36)
+                .transition(.blurReplace)
             case .art:
                 ArtworkThumb(
                     artwork: music.artwork, size: h - 10, dimmed: music.current?.isPlaying == false,
@@ -158,35 +160,26 @@ struct RightEarContent: View {
             case .musicCompact:
                 // Cover is the anchor; the bars sit just outside it.
                 HStack(spacing: 0) {
-                    AudioBarsView(isPlaying: music.current?.isPlaying ?? false, color: tint)
-                        .frame(width: 16, height: h * 0.36)
+                    AudioBarsView(
+                        isPlaying: music.current?.isPlaying ?? false, color: tint, live: model.prefs.liveVisualizer
+                    )
+                    .frame(width: 16, height: h * 0.36)
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, h + 2)
-            case .musicControls(let expanded):
+            case .musicControls:
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
                         TransportControls(model: music, isPlaying: snapshot.isPlaying)
-                        if expanded {
-                            VStack(alignment: .leading, spacing: 3) {
-                                ElapsedLabel(snapshot: snapshot)
-                                Scrubber(model: music, snapshot: snapshot, color: tint, interactive: true)
-                            }
-                        }
                         Spacer(minLength: 0)
                     }
                     .padding(.leading, h + 2)
                     .padding(.trailing, 12)
                 }
-            case .musicFull(let expanded):
+            case .musicFull:
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            TrackText(snapshot: snapshot)
-                            if expanded {
-                                Scrubber(model: music, snapshot: snapshot, color: tint, interactive: true)
-                            }
-                        }
+                        TrackText(snapshot: snapshot)
                         Spacer(minLength: 0)
                         TransportControls(model: music, isPlaying: snapshot.isPlaying, size: 12)
                     }
@@ -203,15 +196,17 @@ struct RightEarContent: View {
         }
     }
 
-    /// A hairline along the ear's bottom edge whenever music is shown collapsed.
+    /// The seek bar along the ear's bottom edge whenever it shows music.
     @ViewBuilder private func progressLine(tint: NSColor) -> some View {
         switch content {
-        case .musicBars, .musicCompact, .musicControls(expanded: false), .musicFull(expanded: false):
+        case .musicBars, .musicCompact, .musicControls, .musicFull:
             if let snapshot = model.nowPlaying.current {
-                ProgressLineView(snapshot: snapshot, color: tint.withAlphaComponent(0.85))
-                    .frame(height: 1.5)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 1)
+                SeekBar(
+                    model: model, snapshot: snapshot, color: tint, side: .right,
+                    interactive: model.mode(.right) != .collapsed
+                )
+                .padding(.horizontal, 8)
+                .padding(.bottom, 1)
             }
         default:
             EmptyView()

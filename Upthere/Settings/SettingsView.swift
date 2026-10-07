@@ -91,6 +91,8 @@ struct SettingsView: View {
                     Stepper("\(Int(prefs.pausedLingerMinutes)) min", value: $prefs.pausedLingerMinutes, in: 0...60, step: 1)
                 }
                 Toggle("Show title and artist when the track changes", isOn: $prefs.announceTracks)
+                Toggle("Live visualizer (bars follow the music)", isOn: $prefs.liveVisualizer)
+                    .help("Analyzes the player's audio in real time. macOS asks once for permission to capture app audio.")
                 Toggle("Scroll sideways on the music ear to seek", isOn: $prefs.scrollToSeek)
                 Toggle("Scroll up/down on the music ear for volume", isOn: $prefs.scrollForVolume)
                 Toggle("Use MediaRemote adapter (all players)", isOn: $prefs.useMediaRemoteAdapter)

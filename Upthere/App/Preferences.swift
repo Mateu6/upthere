@@ -97,6 +97,8 @@ final class Preferences {
     var clearBlackFade: Bool { didSet { save(clearBlackFade, "clearBlackFade") } }
     /// Briefly open the music ear with title and artist when the track changes.
     var announceTracks: Bool { didSet { save(announceTracks, "announceTracks") } }
+    /// Sound bars follow the actual audio (needs audio-capture permission).
+    var liveVisualizer: Bool { didSet { save(liveVisualizer, "liveVisualizer") } }
     var scrollToSeek: Bool { didSet { save(scrollToSeek, "scrollToSeek") } }
     var scrollForVolume: Bool { didSet { save(scrollForVolume, "scrollForVolume") } }
 
@@ -131,6 +133,7 @@ final class Preferences {
         glassTint = GlassTint(rawValue: defaults.string(forKey: "glassTint") ?? "") ?? .clear
         clearBlackFade = defaults.object(forKey: "clearBlackFade") as? Bool ?? false
         announceTracks = defaults.object(forKey: "announceTracks") as? Bool ?? true
+        liveVisualizer = defaults.object(forKey: "liveVisualizer") as? Bool ?? false
         scrollToSeek = defaults.object(forKey: "scrollToSeek") as? Bool ?? true
         scrollForVolume = defaults.object(forKey: "scrollForVolume") as? Bool ?? true
         infoSession = defaults.object(forKey: "infoSession") as? Bool ?? true

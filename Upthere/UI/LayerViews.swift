@@ -20,14 +20,22 @@ extension CAAnimation {
 struct AudioBarsView: NSViewRepresentable {
     var isPlaying: Bool
     var color: NSColor
+    /// Drive the bars from the live audio levels (AudioVisualizer).
+    var live = false
 
     func makeNSView(context: Context) -> AudioBarsNSView { AudioBarsNSView() }
-    func updateNSView(_ view: AudioBarsNSView, context: Context) { view.update(playing: isPlaying, color: color) }
+    func updateNSView(_ view: AudioBarsNSView, context: Context) {
+        view.update(playing: isPlaying, color: color, live: live)
+    }
 }
 
 final class AudioBarsNSView: NSView {
     private let bars: [CALayer] = (0..<4).map { _ in CALayer() }
     private var playing = false
+    private var bouncing = false
+    private var live = false
+    private var link: CADisplayLink?
+    private var shown = SIMD4<Float>(repeating: 0)
     private static let durations: [CFTimeInterval] = [0.42, 0.57, 0.36, 0.5]
     private static let phases: [CFTimeInterval] = [0, 0.21, 0.09, 0.33]
     private static let rest: CGFloat = 0.28
@@ -61,17 +69,95 @@ final class AudioBarsNSView: NSView {
         CATransaction.commit()
     }
 
-    func update(playing: Bool, color: NSColor) {
+    func update(playing: Bool, color: NSColor, live: Bool = false) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for bar in bars { bar.backgroundColor = color.cgColor }
         CATransaction.commit()
-        guard playing != self.playing else { return }
+        guard playing != self.playing || live != self.live else { return }
         self.playing = playing
+        self.live = live
+        updateDriver()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateDriver()
+    }
+
+    /// Live: a display link reads the audio levels (falling back to the
+    /// canned bounce whenever no audio data arrives). Otherwise a render-
+    /// server animation, or rest when paused.
+    private func updateDriver() {
+        if playing && live && window != nil {
+            if link == nil {
+                let link = displayLink(target: self, selector: #selector(tick(_:)))
+                link.preferredFrameRateRange = CAAnimation.ambientFrameRate
+                link.add(to: .main, forMode: .common)
+                self.link = link
+            }
+        } else {
+            link?.invalidate()
+            link = nil
+        }
+        if !playing {
+            bouncing = false
+            rest()
+        } else {
+            setBouncing(!(live && window != nil))
+        }
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        let (levels, age) = AudioVisualizer.shared.store.read()
+        guard age < 0.4 else {
+            setBouncing(true)  // no audio data: canned animation
+            return
+        }
+        setBouncing(false)
+        // Quick rise, slower fall, like a VU meter.
+        for i in 0..<4 {
+            let target = levels[i]
+            shown[i] += (target - shown[i]) * (target > shown[i] ? 0.55 : 0.18)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (i, bar) in bars.enumerated() {
+            bar.transform = CATransform3DMakeScale(1, Self.rest + (1 - Self.rest) * CGFloat(shown[i]), 1)
+        }
+        CATransaction.commit()
+    }
+
+    /// Paused: each bar glides down from wherever it is to rest.
+    private func rest() {
+        shown = .zero
+        for bar in bars {
+            let current = (bar.presentation()?.value(forKeyPath: "transform.scale.y") as? CGFloat) ?? Self.rest
+            bar.removeAnimation(forKey: "bounce")
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            bar.transform = CATransform3DMakeScale(1, Self.rest, 1)
+            CATransaction.commit()
+            guard abs(current - Self.rest) > 0.01 else { continue }
+            let settle = CABasicAnimation(keyPath: "transform.scale.y")
+            settle.fromValue = current
+            settle.toValue = Self.rest
+            settle.duration = 0.45
+            settle.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            bar.add(settle, forKey: "settle")
+        }
+    }
+
+    private func setBouncing(_ on: Bool) {
+        guard on != bouncing else { return }
+        bouncing = on
+        guard on else {
+            if playing { for bar in bars { bar.removeAnimation(forKey: "bounce") } }
+            return  // when pausing, rest() takes the bars down smoothly
+        }
         let now = CACurrentMediaTime()
         for (index, bar) in bars.enumerated() {
-            bar.removeAnimation(forKey: "bounce")
-            guard playing else { continue }
+            bar.removeAnimation(forKey: "settle")
             let animation = CABasicAnimation(keyPath: "transform.scale.y")
             animation.fromValue = Self.rest
             animation.toValue = 1.0
@@ -79,7 +165,9 @@ final class AudioBarsNSView: NSView {
             animation.autoreverses = true
             animation.repeatCount = .infinity
             animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            animation.beginTime = now - Self.phases[index]
+            // Start from rest, staggered, instead of jumping mid-bounce.
+            animation.beginTime = now + Self.phases[index] * 0.5
+            animation.fillMode = .backwards
             animation.preferredFrameRateRange = CAAnimation.ambientFrameRate
             bar.add(animation, forKey: "bounce")
         }
