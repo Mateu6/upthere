@@ -87,7 +87,7 @@ struct ClaudeDetail: View {
                 HStack(spacing: 4) {
                     MarqueeText(
                         text: statusLine, font: .system(size: 10.5, weight: .medium), color: statusColor,
-                        alignment: .trailing)
+                        alignment: .trailing, scrubber: model.leftStatusScrub)
                     if expanded {
                         let chips = model.usageChips(for: session)
                         if !chips.isEmpty {
@@ -160,30 +160,33 @@ struct ClaudePiece: View {
                 }
                 MarqueeText(
                     text: session.projectName, font: .system(size: 12, weight: .semibold), alignment: .trailing, hugs: true)
-            }
-            ZStack(alignment: .trailing) {
                 if hovering {
-                    HStack(spacing: 4) {
-                        Spacer(minLength: 0)
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
-                                .monospacedDigit()
-                        }
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.secondary)
-                        let chips = model.usageChips(for: session)
-                        if !chips.isEmpty {
-                            Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
-                            UsageChipsView(chips: chips)
-                        }
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
+                            .monospacedDigit()
                     }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize()
                     .transition(.blurReplace)
-                } else {
-                    MarqueeText(
-                        text: session.statusLine, font: .system(size: 10.5, weight: .medium), color: session.statusColor,
-                        alignment: .trailing
-                    )
-                    .transition(.blurReplace)
+                }
+            }
+            // Hovering adds time and usage but never hides the description,
+            // which can be scrolled sideways.
+            HStack(spacing: 4) {
+                Spacer(minLength: 0)
+                MarqueeText(
+                    text: session.statusLine, font: .system(size: 10.5, weight: .medium), color: session.statusColor,
+                    alignment: .trailing, hugs: true, scrubber: model.leftStatusScrub)
+                if hovering {
+                    let chips = model.usageChips(for: session)
+                    if !chips.isEmpty {
+                        Group {
+                            Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                            UsageChipsView(chips: chips).fixedSize()
+                        }
+                        .transition(.blurReplace)
+                    }
                 }
             }
             .lineLimit(1)
@@ -217,6 +220,7 @@ struct ClaudeToolDetail: View {
     let session: ClaudeSession
     let expanded: Bool
     var chips: [UsageChip] = []
+    var scrubber: MarqueeScrubber? = nil
 
     var body: some View {
         HStack(spacing: 7) {
@@ -226,7 +230,7 @@ struct ClaudeToolDetail: View {
                     .foregroundStyle(Color(nsColor: Theme.claude))
             }
             VStack(alignment: .leading, spacing: 0) {
-                MarqueeText(text: primaryLine, font: .system(size: 11.5, weight: .medium))
+                MarqueeText(text: primaryLine, font: .system(size: 11.5, weight: .medium), scrubber: scrubber)
                 HStack(spacing: 4) {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))

@@ -31,6 +31,10 @@ struct QueueStrip: View {
                             }
                         }
                         .padding(.trailing, 6)
+                        // The gaps between songs count too, so a scroll
+                        // anywhere over the list moves it.
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
                     }
                     .scrollClipDisabled(false)
                     .mask(

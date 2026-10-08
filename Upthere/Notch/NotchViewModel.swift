@@ -347,7 +347,11 @@ final class NotchViewModel {
         // The name as drawn, plus 22 for a "+N" badge.
         var text = TextWidth.of(session?.projectName ?? "", size: 12, weight: .semibold)
         if claude.visibleSessions.count > 1 { text += 22 }
-        if hovered, let session { text = max(text, usageLineWidth(for: session)) }
+        if hovered, let session {
+            // Hovered: time beside the title, usage after the description.
+            let status = min(TextWidth.of(session.statusLine, size: 10.5, weight: .medium), 140)
+            text = max(text + 36, status + usageLineWidth(for: session) - 30)
+        }
         let chrome = unit + 4 + 12 + 10  // + the scrolling text's edge fade
         return (chrome + min(max(text, 96), cap - chrome)).rounded()
     }
@@ -366,11 +370,10 @@ final class NotchViewModel {
         return min(unit + 4 + 22 + max(title, status, 120) + buttons, 420).rounded()
     }
 
-    /// Elapsed time plus usage chips, at ~5.6 pt per character.
+    /// Elapsed time plus usage chips, as drawn.
     private func usageLineWidth(for session: ClaudeSession) -> CGFloat {
         let chips = usageChips(for: session)
-        let characters = chips.reduce(0) { $0 + $1.text.count }
-        return 30 + (chips.isEmpty ? 0 : 12 + CGFloat(characters) * 5.6 + CGFloat(chips.count) * 6)
+        return 30 + (chips.isEmpty ? 0 : 12 + chips.reduce(0) { $0 + TextWidth.of($1.text, size: 10, weight: .medium) + 6 })
     }
 
     /// Music in the middle keeps a fixed width so the timers beside it
@@ -399,6 +402,14 @@ final class NotchViewModel {
         case .center: break
         }
         return nil
+    }
+
+    /// Whether the pointer is over `side`'s inner piece (screens without a notch).
+    private func cursorOverInnerPiece(_ side: NotchSide) -> Bool {
+        guard let inner = innerPieceWidth(side) else { return false }
+        let x = NSEvent.mouseLocation.x
+        let distance = side == .left ? geometry.notchRect.minX - x : x - geometry.notchRect.maxX
+        return distance < inner
     }
 
     /// A closed ear's inner piece counts as the notch for hovering: only the
@@ -714,9 +725,16 @@ final class NotchViewModel {
     /// system volume. The axis is locked per gesture so diagonal swipes don't
     /// do both. Returns whether the event was consumed.
     func scroll(_ event: NSEvent, side: NotchSide) -> Bool {
-        if side == .left, cursorOverClaude() { return scrollSessions(event) }
+        if side == .left, cursorOverClaude() {
+            // Several chats: scrolling switches between them. One chat:
+            // sideways scrolls its rolling description.
+            return claude.visibleSessions.count > 1 ? scrollSessions(event) : scrubStatus(event, with: leftStatusScrub)
+        }
+        if side == .right, case .claudeTool = content.right { return scrubStatus(event, with: rightStatusScrub) }
         guard showsMusic(side), let current = nowPlaying.current else { return false }
-        if !event.momentumPhase.isEmpty { return true }
+        // Momentum is ignored, except that a sideways swipe over Up Next keeps
+        // gliding the list.
+        if !event.momentumPhase.isEmpty { return !(side == .left && showsQueue && scrollAxis == .horizontal) }
 
         let now = Date.now
         if event.phase.contains(.began) || now.timeIntervalSince(lastScroll) > 0.35 { scrollAxis = nil }
@@ -733,7 +751,9 @@ final class NotchViewModel {
         let precise = event.hasPreciseScrollingDeltas
         // Sideways over Up Next scrolls the list, not the track.
         if scrollAxis == .horizontal && side == .left && showsQueue { return false }
-        if mode(side) == .collapsed && regionUnderCursor() == side { setMode(side, .peek) }
+        // As before: scrolling a closed music ear opens it. The only exception
+        // is a piece beside the (virtual) notch, whose neighbor shouldn't open.
+        if mode(side) == .collapsed && !cursorOverInnerPiece(side) { setMode(side, .peek) }
 
         switch scrollAxis {
         case .horizontal where prefs.scrollToSeek:
@@ -760,6 +780,21 @@ final class NotchViewModel {
     }
 
     // MARK: Switching chats
+
+    /// Sideways scrolls over Claude's rolling description (left ear, and the
+    /// right ear's tool line).
+    @ObservationIgnored let leftStatusScrub = MarqueeScrubber()
+    @ObservationIgnored let rightStatusScrub = MarqueeScrubber()
+
+    /// Follows the system's scroll direction like any sideways list, at a
+    /// gentle 0.6× (trackpad) or 14 pt per wheel notch; momentum glides it.
+    private func scrubStatus(_ event: NSEvent, with scrubber: MarqueeScrubber) -> Bool {
+        let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+        guard abs(dx) > abs(dy) else { return false }
+        let delta = event.hasPreciseScrollingDeltas ? -dx * 0.6 : -dx.sign(14)
+        scrubber.scrub(by: delta)
+        return true
+    }
 
     @ObservationIgnored private var sessionScroll: CGFloat = 0
     /// One gesture switches at most once: locked after a switch until the
@@ -875,4 +910,9 @@ enum TextWidth {
         cache[key] = width
         return width
     }
+}
+
+private extension CGFloat {
+    /// `magnitude` with this value's sign (0 stays 0).
+    func sign(_ magnitude: CGFloat) -> CGFloat { self > 0 ? magnitude : self < 0 ? -magnitude : 0 }
 }

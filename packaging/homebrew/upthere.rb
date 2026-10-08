@@ -1,8 +1,8 @@
 # Mirror of Casks/upthere.rb in github.com/Mateu6/homebrew-tap, which the
 # release workflow bumps (version + sha256) on every tag.
 cask "upthere" do
-  version "0.4.0"
-  sha256 "f63b9de225ebd4a48b0f06d7a9c66adaa5364a0e6a8a1b7f0a281deaf82fe26b"
+  version "0.4.1"
+  sha256 "2c2dd7c4b53ac9605230efec006025a9880e11ef5fba5486fbf1c60379ec25dd"
 
   url "https://github.com/Mateu6/upthere/releases/download/v#{version}/Upthere-#{version}.dmg"
   name "Upthere"

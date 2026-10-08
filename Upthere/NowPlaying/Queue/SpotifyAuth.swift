@@ -7,8 +7,9 @@ import Security
 /// Spotify sign-in with Authorization Code + PKCE (no client secret).
 ///
 /// The browser redirects to a loopback address that only this Mac can reach;
-/// a one-shot listener there picks up the code. The refresh token lives in
-/// the Keychain; access tokens only in memory.
+/// a one-shot listener there picks up the code. The refresh token lives in a
+/// file only your account can read (see `TokenFile`); access tokens only in
+/// memory.
 final class SpotifyAuth {
     static let port: UInt16 = 47863
     static let redirectURI = "http://127.0.0.1:\(port)/callback"
@@ -30,8 +31,7 @@ final class SpotifyAuth {
     var clientID: String
     private var accessToken: String?
     private var expiry = Date.distantPast
-    /// Read from the Keychain at most once per run (each read of an ad-hoc
-    /// signed app's item can make macOS ask for the password).
+    /// Read from disk at most once per run.
     private var refreshToken: String?
     private var refreshTokenLoaded = false
 
@@ -39,7 +39,7 @@ final class SpotifyAuth {
         self.clientID = clientID
     }
 
-    /// A plain flag, so checking it (e.g. in Settings) never touches the Keychain.
+    /// A plain flag, so checking it (e.g. in Settings) never reads the token.
     var isConnected: Bool { UserDefaults.standard.bool(forKey: "spotifyConnected") }
 
     /// Settles the flag for logins made before it existed.
@@ -49,7 +49,7 @@ final class SpotifyAuth {
     }
 
     func disconnect() {
-        Keychain.delete("spotify-refresh-token")
+        TokenFile.spotify.delete()
         UserDefaults.standard.set(false, forKey: "spotifyConnected")
         accessToken = nil
         refreshToken = nil
@@ -58,7 +58,7 @@ final class SpotifyAuth {
 
     private func storedRefreshToken() -> String? {
         if !refreshTokenLoaded {
-            refreshToken = Keychain.get("spotify-refresh-token")
+            refreshToken = TokenFile.spotify.read() ?? migrateFromKeychain()
             refreshTokenLoaded = true
         }
         return refreshToken
@@ -67,8 +67,22 @@ final class SpotifyAuth {
     private func storeRefreshToken(_ token: String?) {
         refreshToken = token
         refreshTokenLoaded = true
-        if let token { Keychain.set(token, for: "spotify-refresh-token") } else { Keychain.delete("spotify-refresh-token") }
+        if let token { TokenFile.spotify.write(token) } else { TokenFile.spotify.delete() }
         UserDefaults.standard.set(token != nil, forKey: "spotifyConnected")
+    }
+
+    /// Logins from before 0.4.2 were in the Keychain, which macOS guards
+    /// per code signature, so it asked for the password after every update.
+    /// Moved once (one last prompt), then the Keychain is never used.
+    private func migrateFromKeychain() -> String? {
+        guard !UserDefaults.standard.bool(forKey: "spotifyTokenMigrated") else { return nil }
+        UserDefaults.standard.set(true, forKey: "spotifyTokenMigrated")
+        guard UserDefaults.standard.object(forKey: "spotifyConnected") == nil || isConnected,
+            let token = Keychain.get("spotify-refresh-token")
+        else { return nil }
+        TokenFile.spotify.write(token)
+        Keychain.delete("spotify-refresh-token")
+        return token
     }
 
     func connect() async throws {
@@ -226,7 +240,42 @@ nonisolated final class LoopbackReceiver: @unchecked Sendable {
     }
 }
 
-/// Generic-password Keychain items for this app.
+/// A secret in Application Support that only your account can read: the
+/// folder is 0700 and the file 0600. Unlike the login Keychain, reading it
+/// never prompts, whatever the app's code signature.
+nonisolated struct TokenFile {
+    static let spotify = TokenFile(name: "spotify-token")
+
+    let name: String
+    var folder = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/upthere/secrets", isDirectory: true)
+
+    private var url: URL { folder.appendingPathComponent(name) }
+
+    func read() -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let token = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return token.isEmpty ? nil : token
+    }
+
+    func write(_ token: String) {
+        let fm = FileManager.default
+        let folder = url.deletingLastPathComponent()
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        // Atomic: written to a temporary file inside the private folder, then
+        // renamed over the old one.
+        try? Data(token.utf8).write(to: url, options: [.atomic])
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    func delete() {
+        try? FileManager.default.removeItem(at: url)
+    }
+}
+
+/// Generic-password Keychain items for this app (only read to migrate
+/// logins stored before 0.4.2).
 nonisolated enum Keychain {
     private static let service = "dev.upthere.app"
 

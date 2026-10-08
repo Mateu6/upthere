@@ -25,6 +25,8 @@ enum DebugBridge {
                 case "expanded-right": model.debugSet(left: .collapsed, right: .expanded)
                 case "check-updates": actions.checkForUpdates()
                 case "hud-volume": model.debugShowHUD(.volume(0.62), side: .right)
+                case let mode? where mode.hasPrefix("scrub:"):
+                    model.leftStatusScrub.scrub(by: CGFloat(Double(mode.dropFirst(6)) ?? 0))
                 case let mode? where mode.hasPrefix("timer:"): model.timers.start(String(mode.dropFirst(6)))
                 case "timer-stopall": model.timers.stopAll()
                 case "timer-input": model.openTimerInput()

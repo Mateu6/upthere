@@ -360,6 +360,22 @@ struct UpNextTests {
         #expect(PKCE.formEncode(["redirect_uri": "http://127.0.0.1:1/cb", "a": "b c"]) == "a=b%20c&redirect_uri=http%3A%2F%2F127.0.0.1%3A1%2Fcb")
     }
 
+    @Test func tokenFileIsPrivateToTheUser() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("upthere-\(UUID())/secrets")
+        defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
+        let file = TokenFile(name: "t", folder: folder)
+        #expect(file.read() == nil)
+        file.write("refresh-1")
+        file.write("refresh-2")
+        #expect(file.read() == "refresh-2")
+        let fileMode = try FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("t").path)[.posixPermissions]
+        let folderMode = try FileManager.default.attributesOfItem(atPath: folder.path)[.posixPermissions]
+        #expect((fileMode as? Int) == 0o600)
+        #expect((folderMode as? Int) == 0o700)
+        file.delete()
+        #expect(file.read() == nil)
+    }
+
     @Test func parsesLoopbackCallback() {
         let request = "GET /callback?code=abc123&state=xyz HTTP/1.1\r\nHost: 127.0.0.1:47863\r\n\r\n"
         #expect(LoopbackReceiver.parseCallback(request) == ["code": "abc123", "state": "xyz"])

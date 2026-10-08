@@ -278,7 +278,9 @@ struct RightEarContent: View {
                 ClaudeBadge(model: model)
             case .claudeTool(let expanded):
                 if let session = model.selectedSession {
-                    ClaudeToolDetail(session: session, expanded: expanded, chips: model.usageChips(for: session))
+                    ClaudeToolDetail(
+                        session: session, expanded: expanded, chips: model.usageChips(for: session),
+                        scrubber: model.rightStatusScrub)
                 }
             }
         }
