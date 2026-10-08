@@ -9,6 +9,11 @@ name: Release
 #   DEVELOPER_ID_CERT_P12       optional: base64 Developer ID Application .p12
 #   DEVELOPER_ID_CERT_PASSWORD  optional
 #   APPLE_TEAM_ID / APPLE_ID / APPLE_APP_PASSWORD   optional, for notarization
+#   UPTHERE_SIGNING_P12 / UPTHERE_SIGNING_PASSWORD  base64 .p12 of the stable
+#                               self-signed "Upthere Local" identity, used when
+#                               there's no Developer ID. Every release keeps the
+#                               same signature, so Keychain "Always Allow" holds
+#                               across updates.
 #   HOMEBREW_TAP_TOKEN          optional: fine-grained token with Contents
 #                               read/write on Mateu6/homebrew-tap; bumps the cask
 
@@ -24,6 +29,7 @@ jobs:
     runs-on: macos-26
     env:
       HAS_SIGNING: ${{ secrets.DEVELOPER_ID_CERT_P12 != '' }}
+      HAS_STABLE_SIGNING: ${{ secrets.UPTHERE_SIGNING_P12 != '' }}
       HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
       SPARKLE_BIN: build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin
     steps:
@@ -54,12 +60,31 @@ jobs:
           rm cert.p12
           printf 'DEVELOPMENT_TEAM = %s\nCODE_SIGN_IDENTITY = Developer ID Application\nENABLE_HARDENED_RUNTIME = YES\nOTHER_CODE_SIGN_FLAGS = --timestamp\n' "$TEAM_ID" > Config/Local.xcconfig
 
+      - name: Import stable signing identity
+        if: env.HAS_SIGNING != 'true' && env.HAS_STABLE_SIGNING == 'true'
+        env:
+          CERT_P12: ${{ secrets.UPTHERE_SIGNING_P12 }}
+          CERT_PASSWORD: ${{ secrets.UPTHERE_SIGNING_PASSWORD }}
+        run: |
+          echo "$CERT_P12" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security set-keychain-settings build.keychain
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          rm cert.p12
+          printf 'CODE_SIGN_IDENTITY = Upthere Local\n' > Config/Local.xcconfig
+
       - name: Build
         run: |
           xcodegen generate
           xcodebuild -scheme Upthere -configuration Release -derivedDataPath build/DerivedData \
             MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build
           ditto build/DerivedData/Build/Products/Release/Upthere.app Upthere.app
+          codesign --verify --deep --strict Upthere.app
+          codesign -dr - Upthere.app
 
       - name: Re-sign Sparkle helpers with Developer ID
         if: env.HAS_SIGNING == 'true'
