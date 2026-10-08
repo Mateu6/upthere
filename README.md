@@ -11,6 +11,15 @@ It never drops below the notch, so it just looks like the notch grew ears.
   - Collapsed with music playing, it uses **0.0% CPU** and about 17 MB.
   - Animations run as Core Animation layer animations on the render server.
 
+## Install
+
+```bash
+brew install --cask mateu6/tap/upthere
+```
+
+Or download the DMG from [Releases](https://github.com/Mateu6/upthere/releases). Upthere updates itself.
+It isn't notarized yet: if macOS blocks the first launch, use System Settings → Privacy & Security → Open Anyway.
+
 ## How it works
 
 | Piece | Mechanism |

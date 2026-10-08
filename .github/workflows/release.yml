@@ -9,6 +9,8 @@ name: Release
 #   DEVELOPER_ID_CERT_P12       optional: base64 Developer ID Application .p12
 #   DEVELOPER_ID_CERT_PASSWORD  optional
 #   APPLE_TEAM_ID / APPLE_ID / APPLE_APP_PASSWORD   optional, for notarization
+#   HOMEBREW_TAP_TOKEN          optional: fine-grained token with Contents
+#                               read/write on Mateu6/homebrew-tap; bumps the cask
 
 on:
   push:
@@ -22,6 +24,7 @@ jobs:
     runs-on: macos-26
     env:
       HAS_SIGNING: ${{ secrets.DEVELOPER_ID_CERT_P12 != '' }}
+      HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
       SPARKLE_BIN: build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin
     steps:
       - uses: actions/checkout@v4
@@ -108,3 +111,16 @@ jobs:
             updates/Upthere-*.dmg
             updates/appcast.xml
           generate_release_notes: true
+
+      - name: Update Homebrew tap
+        if: env.HAS_TAP_TOKEN == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          SHA=$(shasum -a 256 "updates/Upthere-${VERSION}.dmg" | cut -d' ' -f1)
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/Mateu6/homebrew-tap.git" tap
+          cd tap
+          sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/; s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/upthere.rb
+          git diff --stat
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "Upthere ${VERSION}" && git push origin HEAD:main
