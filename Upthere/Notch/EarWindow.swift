@@ -29,13 +29,18 @@ final class EarWindow {
     private var ear: CGFloat = 0
     /// Ear width the panel frame currently covers.
     private var visibleEar: CGFloat = 0
+    /// While sliding to a new notch position: the frame it slides from,
+    /// which the panel keeps covering until the slide settles.
+    private var slideCover: CGRect?
+    private var slideTask: Task<Void, Never>?
 
     init(side: NotchSide, root: EarRootView) {
         self.side = side
         let host = NotchHostingView(rootView: root)
         host.sizingOptions = []
         container = EarContainerView(host: host)
-        container.autoresizingMask = side == .left ? [.minXMargin] : [.maxXMargin]
+        // Positioned explicitly in `place(ear:)`, pinned to the notch.
+        container.autoresizingMask = []
         mask.fillColor = NSColor.black.cgColor
         container.layer?.mask = mask
 
@@ -61,6 +66,37 @@ final class EarWindow {
         mask.path = path(ear: layerMask ? ear : maxEar)
         CATransaction.commit()
         place(ear: max(ear, visibleEar))
+    }
+
+    /// Slides to a virtual notch that moved sideways (notchless screens
+    /// re-centering), with the same spring as the ears. The panel covers
+    /// both positions while the container's layer glides on the render
+    /// server, so both ears move in lockstep.
+    func slide(to newGeometry: NotchGeometry) {
+        guard let old = geometry else { return configure(geometry: newGeometry, maxEar: maxEar, layerMask: layerMaskAnimates) }
+        let dx = newGeometry.notchRect.midX - old.notchRect.midX
+        guard dx != 0 else { return }
+        let from = slideCover.map { panel.frame.union($0) } ?? panel.frame
+        geometry = newGeometry
+        slideCover = from
+        place(ear: max(ear, visibleEar))
+
+        let spring = CASpringAnimation(perceptualDuration: Theme.earDuration, bounce: 0)
+        spring.keyPath = "transform.translation.x"
+        spring.isAdditive = true
+        spring.fromValue = -dx
+        spring.toValue = 0
+        spring.duration = spring.settlingDuration
+        spring.preferredFrameRateRange = Self.nativeFrameRate(for: newGeometry)
+        container.layer?.add(spring, forKey: "slide-\(UUID())")
+
+        slideTask?.cancel()
+        slideTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(spring.settlingDuration))
+            guard !Task.isCancelled, let self else { return }
+            self.slideCover = nil
+            self.place(ear: self.ear)
+        }
     }
 
     func setEar(_ newEar: CGFloat, animated: Bool = true) {
@@ -115,7 +151,8 @@ final class EarWindow {
             notchHalf: (geometry?.notchWidth ?? 0) / 2, ear: ear)
     }
 
-    /// Sizes the panel to show the notch half plus `ear` (and its shoulder).
+    /// Sizes the panel to show the notch half plus `ear` (and its shoulder),
+    /// plus where it's sliding from, and pins the container to the notch.
     private func place(ear: CGFloat) {
         guard let g = geometry else { return }
         visibleEar = ear
@@ -123,12 +160,23 @@ final class EarWindow {
         let extent = ear > 0 ? ear + EarMask.shoulderRadius : 0
         let width = half + extent
         let x = side == .left ? g.notchRect.minX - extent : g.notchRect.midX
-        let frame = CGRect(x: x, y: g.screenFrame.maxY - g.height, width: width, height: g.height).integral
+        var frame = CGRect(x: x, y: g.screenFrame.maxY - g.height, width: width, height: g.height).integral
+        if let slideCover, frame.width >= 1 { frame = frame.union(slideCover) }
         guard frame.width >= 1 else {
             panel.orderOut(nil)
             return
         }
         if panel.frame != frame { panel.setFrame(frame, display: true) }
+        // The container's notch-side edge sits on the notch's center
+        // (rounded outwards, as the integral frame is).
+        let anchor = (side == .left ? g.notchRect.midX.rounded(.up) : g.notchRect.midX.rounded(.down)) - frame.minX
+        let origin = side == .left ? anchor - containerWidth : anchor
+        if container.frame.origin.x != origin {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            container.frame.origin.x = origin
+            CATransaction.commit()
+        }
         if !panel.isVisible { panel.orderFrontRegardless() }
     }
 

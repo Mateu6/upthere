@@ -36,6 +36,7 @@ final class NotchWindowController {
         configure()
         observeLayout()
         observeConfiguration()
+        observeCentering()
         installScrollMonitor()
         #if DEBUG
         DebugBridge.install(model: model, actions: actions) { [left, right] in
@@ -57,9 +58,18 @@ final class NotchWindowController {
 
     private func updateScreen(force: Bool) {
         guard let screen = ScreenPicker.screen(for: prefs.display) else { return }
-        let geometry = NotchGeometry.make(for: screen)
+        let geometry = NotchGeometry.make(for: screen).centering(offset: viewModel.restingCenterOffset)
         guard force || geometry != viewModel.geometry else { return }
+        let old = viewModel.geometry
         viewModel.geometry = geometry
+        // Only the virtual notch moved (re-centering): glide there.
+        var moved = old
+        moved.notchRect.origin.x = geometry.notchRect.origin.x
+        if !force, moved == geometry {
+            left.slide(to: geometry)
+            right.slide(to: geometry)
+            return
+        }
         configure()
     }
 
@@ -72,6 +82,17 @@ final class NotchWindowController {
         }
         left.setEar(l)
         right.setEar(r)
+    }
+
+    /// Notchless screens: keep the resting ears centered as what they show
+    /// changes (e.g. music starts while Claude works).
+    private func observeCentering() {
+        let offset = withObservationTracking { viewModel.restingCenterOffset } onChange: { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.observeCentering() } }
+        }
+        guard !viewModel.geometry.hasNotch, viewModel.geometry.screenFrame.midX - viewModel.geometry.notchRect.minX != offset
+        else { return }
+        updateScreen(force: false)
     }
 
     private func observeConfiguration() {

@@ -39,6 +39,8 @@ enum DebugBridge {
                 case "theme-clear": model.prefs.theme = .clear
                 case "clear-fade-on": model.prefs.clearBlackFade = true
                 case "clear-fade-off": model.prefs.clearBlackFade = false
+                case "center-claude": model.prefs.centerPiece = .claude
+                case "center-music": model.prefs.centerPiece = .music
                 case "glass-clear": model.prefs.glassTint = .clear
                 case "glass-color": model.prefs.glassTint = .color
                 default: break

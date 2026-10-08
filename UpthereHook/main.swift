@@ -149,12 +149,26 @@ func summary(_ payload: [UInt8]) -> String {
     return parts.joined(separator: " · ")
 }
 
+/// The controlling terminal (e.g. "/dev/ttys004"), inherited from Claude,
+/// so the app can bring forward the exact tab.
+func controllingTTY() -> String? {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, info.kp_eproc.e_tdev != -1,
+        let name = devname(info.kp_eproc.e_tdev, S_IFCHR)
+    else { return nil }
+    let tty = String(cString: name)
+    return tty.hasPrefix("tty") ? "/dev/" + tty : nil
+}
+
 func send(_ payload: [UInt8], kind: String?) {
     guard payload.first == UInt8(ascii: "{"), let path = socketPath(), let fd = connectSocket(path) else { return }
     // Envelope: the hook process inherits the terminal's environment, which
-    // tells the app which window to bring forward when the session is clicked.
+    // tells the app which window to bring forward when the session is clicked
+    // (the Claude app's session id, or the terminal and its tty).
     var message = Array(
-        "{\"v\":1,\"kind\":\(jsonString(kind)),\"term\":\(jsonString(env("TERM_PROGRAM"))),\"bundle\":\(jsonString(env("__CFBundleIdentifier"))),\"ppid\":\(getppid()),\"payload\":"
+        "{\"v\":1,\"kind\":\(jsonString(kind)),\"term\":\(jsonString(env("TERM_PROGRAM"))),\"bundle\":\(jsonString(env("__CFBundleIdentifier"))),\"host\":\(jsonString(env("CLAUDE_CODE_HOST_SESSION_ID"))),\"tty\":\(jsonString(controllingTTY())),\"ppid\":\(getppid()),\"payload\":"
             .utf8)
     message.append(contentsOf: payload)
     message.append(contentsOf: Array("}\n".utf8))

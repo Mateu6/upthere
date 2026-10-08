@@ -142,6 +142,10 @@ struct TimerStrip: View {
     let model: NotchViewModel
     /// The ear's width, so chips sit against the notch when they fit.
     var stripWidth: CGFloat = 0
+    /// Claude's chip (off where Claude has its own piece).
+    var showsClaude = true
+    /// The notch is on the leading side (right ear).
+    var mirrored = false
 
     var body: some View {
         let timers = model.timers
@@ -149,8 +153,8 @@ struct TimerStrip: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    Spacer(minLength: 0)
-                    if let session = model.claude.primary, model.prefs.claudeEnabled {
+                    if !mirrored { Spacer(minLength: 0) }
+                    if showsClaude, let session = model.claude.primary, model.prefs.claudeEnabled {
                         ClaudeChip(model: model, session: session, size: h - 16)
                     }
                     ForEach(timers.timers) { timer in
@@ -167,11 +171,12 @@ struct TimerStrip: View {
                         .buttonStyle(HoverButtonStyle())
                         .help("New timer")
                     }
+                    if mirrored { Spacer(minLength: 0) }
                 }
                 .padding(.horizontal, 6)
-                .frame(minWidth: stripWidth, alignment: .trailing)
+                .frame(minWidth: stripWidth, alignment: mirrored ? .leading : .trailing)
             }
-            .defaultScrollAnchor(.trailing)
+            .defaultScrollAnchor(mirrored ? .leading : .trailing)
             .onAppear { if let id = timers.alertingID { proxy.scrollTo(id, anchor: .center) } }
             .onChange(of: timers.alertingID) { _, id in
                 if let id { withAnimation(.smooth) { proxy.scrollTo(id, anchor: .center) } }
@@ -231,8 +236,13 @@ struct TimerChip: View {
                     Capsule().fill(Color(nsColor: color)).frame(width: 3).padding(.vertical, 4).padding(.leading, 2)
                 }
         }
-        .onHover { hovering = $0 }
-        .animation(.smooth(duration: 0.2), value: hovering)
+        .onHover { inside in
+            hovering = inside
+            // The strip widens to fit this chip's buttons.
+            if inside { model.hoveredTimerID = timer.id } else if model.hoveredTimerID == timer.id { model.hoveredTimerID = nil }
+        }
+        .onDisappear { if model.hoveredTimerID == timer.id { model.hoveredTimerID = nil } }
+        .animation(.spring(duration: Theme.earDuration, bounce: 0), value: hovering)
     }
 
     private func chipButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
@@ -253,32 +263,53 @@ struct TimerChip: View {
 /// and a small spark while Claude works.
 struct TimerCollapsed: View {
     let model: NotchViewModel
+    /// Claude's spark (off where Claude has its own piece).
+    var showsClaude = true
+    /// The notch is on the leading side (right ear): read outwards from it.
+    var mirrored = false
 
     var body: some View {
         let timers = model.timers
         let h = model.geometry.height
+        let shown = mirrored ? Array(timers.collapsedTimers.reversed()) : timers.collapsedTimers
         HStack(spacing: 8) {
-            Spacer(minLength: 0)
-            if model.prefs.claudeEnabled, model.claude.primary?.activity.isWorking == true {
-                ClaudeSparkView(style: .working, color: Theme.claude).frame(width: 9, height: 9)
+            if !mirrored {
+                Spacer(minLength: 0)
+                extras(timers: timers)
             }
-            if timers.hiddenCount > 0 {
-                Text("+\(timers.hiddenCount)")
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundStyle(Theme.secondary)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-            ForEach(timers.collapsedTimers) { timer in
+            ForEach(shown) { timer in
                 let color = timers.color(of: timer)
                 HStack(spacing: 4) {
+                    if mirrored { glyph(timer, color: color, h: h) }
                     TimerTime(timer: timer, compact: true, color: Color(nsColor: color))
-                    TimerGlyph(timer: timer, color: color, size: h * 0.5, alerting: timers.alertingID == timer.id)
+                    if !mirrored { glyph(timer, color: color, h: h) }
                 }
                 .transition(.blurReplace)
             }
+            if mirrored {
+                extras(timers: timers)
+                Spacer(minLength: 0)
+            }
         }
         .animation(.smooth(duration: 0.25), value: timers.collapsedTimers.map(\.id))
+    }
+
+    private func glyph(_ timer: TrackedTimer, color: NSColor, h: CGFloat) -> some View {
+        TimerGlyph(timer: timer, color: color, size: h * 0.5, alerting: model.timers.alertingID == timer.id)
+    }
+
+    /// Claude's spark and the "+N" badge, at the far end from the notch.
+    @ViewBuilder private func extras(timers: TimerModel) -> some View {
+        if showsClaude, model.prefs.claudeEnabled, model.claude.primary?.activity.isWorking == true {
+            ClaudeSparkView(style: .working, color: Theme.claude).frame(width: 9, height: 9)
+        }
+        if timers.hiddenCount > 0 {
+            Text("+\(timers.hiddenCount)")
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(Theme.secondary)
+                .lineLimit(1)
+                .fixedSize()
+        }
     }
 }
 
@@ -301,6 +332,7 @@ struct ClaudeChip: View {
         .padding(.vertical, 2)
         .padding(.horizontal, 4)
         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color(nsColor: Theme.claude).opacity(0.08)))
+        .hoverLift(scale: 1.02)
         .onTapGesture { model.claude.focus(session) }
     }
 }

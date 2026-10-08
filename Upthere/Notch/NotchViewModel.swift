@@ -25,6 +25,14 @@ enum LeftContent: Hashable {
     case timerStrip
     case claudeGlyph
     case claudeDetail(expanded: Bool)
+    /// Screens without a notch: Claude's piece next to the notch, with the
+    /// timers (if any) further out.
+    case claudePiece(timers: TimerPart)
+}
+
+/// The timers' share of a combined ear on a screen without a notch.
+enum TimerPart: Hashable {
+    case none, collapsed, strip
 }
 
 enum RightContent: Hashable {
@@ -35,6 +43,9 @@ enum RightContent: Hashable {
     case musicFull(expanded: Bool)
     case claudeBadge
     case claudeTool(expanded: Bool)
+    /// Screens without a notch, music in the middle: music next to the
+    /// notch, the timers further out.
+    case musicWithTimers(strip: Bool)
 }
 
 struct NotchActions {
@@ -110,8 +121,9 @@ final class NotchViewModel {
             tracksObserved = true
             if showsQueue { queue.refresh(for: nowPlaying.current) }
         }
-        // Not on launch, and not when playback merely stops.
-        guard tracksObserved, prefs.announceTracks, let key, key != lastTrackKey,
+        // Not on launch, not when playback merely stops, and not where the
+        // title is always showing anyway.
+        guard tracksObserved, !musicRestsOpen, prefs.announceTracks, let key, key != lastTrackKey,
             nowPlaying.current?.isPlaying == true
         else { return }
         let side: NotchSide = .right  // the title lives in the right ear
@@ -143,9 +155,44 @@ final class NotchViewModel {
 
     var isAnyEarOpen: Bool { effectiveLeftMode != .collapsed || rightMode != .collapsed }
 
-    var content: (left: LeftContent, right: RightContent) {
-        let l = effectiveLeftMode
-        let r = rightMode
+    var content: (left: LeftContent, right: RightContent) { content(left: effectiveLeftMode, right: rightMode) }
+
+    /// Notchless screens have room to spare: the music ear rests showing
+    /// title, artist and controls instead of just the bars.
+    var musicRestsOpen: Bool { !geometry.hasNotch }
+
+    /// Whether `side` shows its open layout (hovered, or resting open).
+    func isOpen(_ side: NotchSide) -> Bool {
+        mode(side) != .collapsed || (side == .right && musicRestsOpen && showsMusic(.right))
+    }
+
+    /// How far the virtual notch of a notchless screen moves left of the
+    /// screen's center so the resting ears sit centered together.
+    var restingCenterOffset: CGFloat {
+        guard !geometry.hasNotch else { return 0 }
+        let rest = content(left: .collapsed, right: .collapsed)
+        let offset: CGFloat
+        switch (rest.left, rest.right) {
+        // Three pieces: the center piece sits in the middle of the screen.
+        case (.claudePiece(.collapsed), .musicFull): offset = -claudePieceWidth(hovered: false) / 2
+        case (_, .musicWithTimers): offset = musicPieceWidth / 2
+        // Otherwise the resting ears are centered together.
+        default:
+            let left: CGFloat =
+                switch rest.left {
+                case .timerStrip: 0
+                case .claudePiece(let part): claudePieceWidth(hovered: false) + width(part)
+                default: width(rest.left)
+                }
+            offset = (width(rest.right) - left) / 2
+        }
+        let half = geometry.screenFrame.width / 2 - 40
+        return min(max(offset, -half), half).rounded()
+    }
+
+    private func content(left l: EarMode, right r: EarMode) -> (left: LeftContent, right: RightContent) {
+        // The music ear's mode, counting resting open as peeked.
+        let rm: EarMode = r == .collapsed && musicRestsOpen ? .peek : r
         let sessionsLive = prefs.claudeEnabled && claude.isLive
         // With "show usage when idle", the Claude ear stays (ring + limits).
         let usageOnly = !sessionsLive && prefs.claudeEnabled && prefs.showUsageWhenIdle
@@ -157,6 +204,27 @@ final class NotchViewModel {
 
         let claudeLeft: LeftContent = l == .collapsed ? .claudeGlyph : .claudeDetail(expanded: l == .expanded)
 
+        // Screens without a notch have room for Claude, music and timers
+        // side by side: [timers | Claude ‖ music], or with music as the
+        // center piece [Claude ‖ music | timers]. Only the outer piece of an
+        // ear opens on hover, so the pieces next to the notch never move.
+        if !geometry.hasNotch, sessionsLive {
+            let musicNow = nowPlaying.isLive || (r != .collapsed && nowPlaying.current != nil)
+            // Claude needing you shows in its piece rather than opening the ear.
+            let lo: EarMode = l == .collapsed ? .collapsed : leftMode
+            if musicNow && !timers.isEmpty && prefs.centerPiece == .music {
+                let left: LeftContent = lo == .collapsed ? .claudePiece(timers: .none) : .claudeDetail(expanded: true)
+                return (left, .musicWithTimers(strip: r != .collapsed))
+            }
+            let left: LeftContent =
+                timers.isEmpty
+                ? (lo == .collapsed ? .claudePiece(timers: .none) : .claudeDetail(expanded: true))
+                : .claudePiece(timers: lo == .collapsed ? .collapsed : .strip)
+            if musicNow { return (left, .musicFull(expanded: false)) }
+            if !timers.isEmpty { return (left, .none) }
+            return (left, r == .collapsed ? .claudeBadge : .claudeTool(expanded: r == .expanded))
+        }
+
         // Timers take the left ear (Claude needing you still overrides).
         // Music then lives entirely in the right ear; Claude without music
         // keeps the right ear, and appears as a chip in the timer strip.
@@ -167,8 +235,8 @@ final class NotchViewModel {
             let musicNow = nowPlaying.isLive || (r != .collapsed && nowPlaying.current != nil)
             let right: RightContent
             switch (musicNow, sessionsLive) {
-            case (true, false): right = r == .collapsed ? .musicBars : .musicControls(expanded: r == .expanded)
-            case (true, true): right = r == .collapsed ? .musicCompact : .musicFull(expanded: r == .expanded)
+            case (true, false): right = rm == .collapsed ? .musicBars : .musicControls(expanded: rm == .expanded)
+            case (true, true): right = rm == .collapsed ? .musicCompact : .musicFull(expanded: rm == .expanded)
             case (false, true): right = r == .collapsed ? .claudeBadge : .claudeTool(expanded: r == .expanded)
             case (false, false): right = .none
             }
@@ -183,27 +251,38 @@ final class NotchViewModel {
                 // Left: cover, opening to Up Next. Right: bars, opening to
                 // title, artist and controls.
                 l == .collapsed ? .musicArt : prefs.showQueue ? .queue : .musicInfo(expanded: l == .expanded),
-                r == .collapsed ? .musicBars : .musicControls(expanded: r == .expanded)
+                rm == .collapsed ? .musicBars : .musicControls(expanded: rm == .expanded)
             )
         case (false, true):
             if usageOnly { return (claudeLeft, .none) }
             return (claudeLeft, r == .collapsed ? .claudeBadge : .claudeTool(expanded: r == .expanded))
         case (true, true):
-            return (claudeLeft, r == .collapsed ? .musicCompact : .musicFull(expanded: r == .expanded))
+            return (claudeLeft, rm == .collapsed ? .musicCompact : .musicFull(expanded: rm == .expanded))
         }
     }
 
     /// Ear widths, without the shoulder flare.
     var leftWidth: CGFloat {
         let content = content.left
-        let limit = content == .timerStrip ? timerStripLimit : nil
+        let limit: CGFloat? =
+            switch content {
+            case .timerStrip: timerStripLimit
+            case .claudePiece: timerStripLimit + 340
+            default: nil
+            }
         return nudged(clamp(width(content), room: geometry.leftRoom, limit: limit), .left)
     }
-    var rightWidth: CGFloat { nudged(clamp(width(content.right), room: geometry.rightRoom), .right) }
+    var rightWidth: CGFloat {
+        let content = content.right
+        let limit: CGFloat? = if case .musicWithTimers = content { timerStripLimit + 260 } else { nil }
+        return nudged(clamp(width(content), room: geometry.rightRoom, limit: limit), .right)
+    }
 
     /// The widest an ear can get on this screen (including the hover nudge).
     func maxEarWidth(room: CGFloat) -> CGFloat {
-        min(max(CGFloat(prefs.maxEarWidth), timerStripLimit), max(0, room - 8 - Theme.shoulderRadius)) + 6
+        // Without a notch, a piece can sit inside a timer strip's ear.
+        let widest = max(CGFloat(prefs.maxEarWidth), timerStripLimit) + (geometry.hasNotch ? 0 : 340)
+        return min(widest, max(0, room - 8 - Theme.shoulderRadius)) + 6
     }
 
     private var unit: CGFloat { geometry.height }
@@ -211,7 +290,7 @@ final class NotchViewModel {
     /// Collapsed ears swell slightly under the cursor before peeking:
     /// immediate feedback that the notch noticed you.
     private func nudged(_ width: CGFloat, _ side: NotchSide) -> CGFloat {
-        width > 0 && nudgedSide == side && mode(side) == .collapsed ? width + 6 : width
+        width > 0 && nudgedSide == side && !isOpen(side) ? width + 6 : width
     }
 
     private func width(_ content: LeftContent) -> CGFloat {
@@ -222,8 +301,110 @@ final class NotchViewModel {
         case .queue: 360
         case .timer: timerCollapsedWidth
         case .timerStrip: timerStripWidth
-        case .claudeDetail(let expanded): expanded ? 340 : 240
+        case .claudeDetail(let expanded): claudeDetailWidth(expanded: expanded)
+        case .claudePiece(let part): claudePieceWidth + width(part)
         }
+    }
+
+    private func width(_ part: TimerPart) -> CGFloat {
+        switch part {
+        case .none: 0
+        case .collapsed: timerCollapsedWidth(spark: false)
+        case .strip: timerStripWidth(claudeChip: false)
+        }
+    }
+
+    // MARK: Pieces (screens without a notch)
+
+    /// The timer chip under the pointer, which shows its buttons.
+    var hoveredTimerID: UUID?
+
+    /// The pointer is on Claude's piece: it widens to fit time and usage.
+    /// A chat picked by scrolling goes back to the most active one a little
+    /// after the pointer leaves.
+    var claudePieceHovered = false {
+        didSet {
+            guard claudePieceHovered != oldValue else { return }
+            selectionResetTask?.cancel()
+            guard !claudePieceHovered, selectedSessionID != nil else { return }
+            let delay = prefs.earCloseDelay + 1.5
+            selectionResetTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled, let self, !self.claudePieceHovered else { return }
+                self.selectedSessionID = nil
+            }
+        }
+    }
+
+    /// Claude's piece hugs its project name (the status rolls beneath it),
+    /// widening on hover to fit time and usage. It may grow larger when it
+    /// shares the screen with music only, as it has more to say.
+    var claudePieceWidth: CGFloat { claudePieceWidth(hovered: claudePieceHovered) }
+
+    func claudePieceWidth(hovered: Bool) -> CGFloat {
+        let cap: CGFloat = nowPlaying.isLive && timers.isEmpty ? 360 : 320
+        let session = selectedSession
+        // The name as drawn, plus 22 for a "+N" badge.
+        var text = TextWidth.of(session?.projectName ?? "", size: 12, weight: .semibold)
+        if claude.visibleSessions.count > 1 { text += 22 }
+        if hovered, let session { text = max(text, usageLineWidth(for: session)) }
+        let chrome = unit + 4 + 12 + 10  // + the scrolling text's edge fade
+        return (chrome + min(max(text, 96), cap - chrome)).rounded()
+    }
+
+    /// Claude's detail hugs its text too: the name when peeking; time,
+    /// usage and the buttons when expanded.
+    private func claudeDetailWidth(expanded: Bool) -> CGFloat {
+        guard expanded else { return min(claudePieceWidth(hovered: false), 240) }
+        guard let session = selectedSession else { return 240 }
+        // Title + time on top; status (at least 120, it rolls) + usage below.
+        let title = TextWidth.of(session.projectName, size: 12, weight: .semibold) + 40
+        let chips = usageChips(for: session)
+        let usage = chips.isEmpty ? 0 : 12 + chips.reduce(0) { $0 + TextWidth.of($1.text, size: 10, weight: .medium) + 6 }
+        let status = min(TextWidth.of(session.statusLine, size: 10.5, weight: .medium), 160) + usage
+        let buttons: CGFloat = 28 + (claude.visibleSessions.count > 1 ? 48 : 0)
+        return min(unit + 4 + 22 + max(title, status, 120) + buttons, 420).rounded()
+    }
+
+    /// Elapsed time plus usage chips, at ~5.6 pt per character.
+    private func usageLineWidth(for session: ClaudeSession) -> CGFloat {
+        let chips = usageChips(for: session)
+        let characters = chips.reduce(0) { $0 + $1.text.count }
+        return 30 + (chips.isEmpty ? 0 : 12 + CGFloat(characters) * 5.6 + CGFloat(chips.count) * 6)
+    }
+
+    /// Music in the middle keeps a fixed width so the timers beside it
+    /// never shift.
+    var musicPieceWidth: CGFloat { 250 }
+
+    /// Music at the outer end hugs its title, keeping it close to the controls.
+    private var musicHugWidth: CGFloat {
+        guard let snapshot = nowPlaying.current else { return 250 }
+        let text = max(
+            TextWidth.of(snapshot.title, size: 12, weight: .semibold),
+            TextWidth.of(snapshot.artist, size: 10.5, weight: .medium))
+        // +10: the scrolling text's edge fade.
+        return (unit + 4 + min(max(text + 10, 60), 200) + 8 + 76 + 10).rounded(.up)
+    }
+
+    /// Width of the piece next to the notch that stays as it is while the
+    /// rest of the ear opens.
+    private func innerPieceWidth(_ side: NotchSide) -> CGFloat? {
+        let c = content
+        switch side {
+        case .left:
+            if case .claudePiece(let part) = c.left, part != .none { return claudePieceWidth }
+        case .right:
+            if case .musicWithTimers = c.right { return musicPieceWidth }
+        case .center: break
+        }
+        return nil
+    }
+
+    /// A closed ear's inner piece counts as the notch for hovering: only the
+    /// outer piece opens the ear.
+    private func overInnerPiece(_ side: NotchSide, distance: CGFloat) -> Bool {
+        mode(side) == .collapsed && innerPieceWidth(side).map { distance < $0 } == true
     }
 
     private func width(_ content: RightContent) -> CGFloat {
@@ -232,14 +413,17 @@ final class NotchViewModel {
         case .musicBars, .claudeBadge: unit + 4
         case .musicCompact: unit * 2
         case .musicControls: 300
-        case .musicFull(let expanded): expanded ? 340 : 300
+        case .musicFull(let expanded): geometry.hasNotch ? (expanded ? 340 : 300) : musicHugWidth
         case .claudeTool(let expanded): expanded ? 300 : 190
+        case .musicWithTimers(let strip): musicPieceWidth + width(strip ? TimerPart.strip : .collapsed)
         }
     }
 
     /// Collapsed timers hug their content: glyph + time per shown timer,
     /// plus the "+N" badge and Claude's spark when present.
-    private var timerCollapsedWidth: CGFloat {
+    private var timerCollapsedWidth: CGFloat { timerCollapsedWidth(spark: true) }
+
+    private func timerCollapsedWidth(spark showsSpark: Bool) -> CGFloat {
         let now = Date.now
         // ~7.4 pt per character of the 11.5 pt semibold monospaced digits.
         let items = timers.collapsedTimers.map { timer -> CGFloat in
@@ -252,7 +436,7 @@ final class NotchViewModel {
             return unit * 0.5 + 4 + CGFloat(text.count) * 7.4
         }
         let badge: CGFloat = timers.hiddenCount > 0 ? 10 + CGFloat("+\(timers.hiddenCount)".count) * 7 : 0
-        let spark: CGFloat = prefs.claudeEnabled && claude.primary?.activity.isWorking == true ? 17 : 0
+        let spark: CGFloat = showsSpark && prefs.claudeEnabled && claude.primary?.activity.isWorking == true ? 17 : 0
         let spacing = CGFloat(max(0, items.count - 1)) * 8
         // Padding on both sides plus a little slack for a longer time.
         return 14 + items.reduce(0, +) + spacing + badge + spark + 6
@@ -260,11 +444,17 @@ final class NotchViewModel {
 
     /// The hover strip hugs its chips (Claude, each timer, +), with room
     /// for a hovered chip's buttons; it scrolls beyond the max width.
-    private var timerStripWidth: CGFloat {
+    private var timerStripWidth: CGFloat { timerStripWidth(claudeChip: true) }
+
+    private func timerStripWidth(claudeChip showsClaude: Bool) -> CGFloat {
         let chip = unit + 92
-        let claudeChip: CGFloat = prefs.claudeEnabled && claude.primary != nil ? chip + 6 : 0
+        let claudeChip: CGFloat = showsClaude && prefs.claudeEnabled && claude.primary != nil ? chip + 6 : 0
         let add: CGFloat = timers.timers.count < TimerModel.maxTimers ? 30 : 0
-        return 12 + claudeChip + CGFloat(timers.timers.count) * (chip + 6) + add + 64
+        // A hovered chip shows its buttons (pin, pause, +5, stop); the
+        // strip grows to fit them rather than keeping room spare.
+        let buttons: CGFloat = hoveredTimerID.flatMap { id in timers.timers.first { $0.id == id } }
+            .map { $0.isCountdown ? 84 : 64 } ?? 0
+        return 12 + claudeChip + CGFloat(timers.timers.count) * (chip + 6) + add + buttons + 8
     }
 
     /// Timer strips may grow past the max ear width (they hug their chips),
@@ -281,7 +471,7 @@ final class NotchViewModel {
 
     /// The seek/volume overlay needs a widened music ear.
     func showsHUD(on side: NotchSide) -> Bool {
-        guard hud != nil, hudSide == side, mode(side) != .collapsed else { return false }
+        guard hud != nil, hudSide == side, isOpen(side) else { return false }
         let c = content
         switch side {
         case .left:
@@ -289,7 +479,7 @@ final class NotchViewModel {
             if c.left == .queue { return true }
         case .right:
             switch c.right {
-            case .musicControls, .musicFull: return true
+            case .musicControls, .musicFull, .musicWithTimers: return true
             default: break
             }
         case .center: break
@@ -305,7 +495,7 @@ final class NotchViewModel {
             return c.left == .musicArt || c.left == .queue
         case .right:
             switch c.right {
-            case .musicBars, .musicCompact, .musicControls, .musicFull: return true
+            case .musicBars, .musicCompact, .musicControls, .musicFull, .musicWithTimers: return true
             default: return false
             }
         case .center: return false
@@ -345,7 +535,7 @@ final class NotchViewModel {
 
     private var claudeShown: Bool {
         switch content.left {
-        case .claudeGlyph, .claudeDetail: true
+        case .claudeGlyph, .claudeDetail, .claudePiece: true
         default: false
         }
     }
@@ -385,6 +575,9 @@ final class NotchViewModel {
         if debugHold { return }
         #endif
         let region = regionUnderCursor()
+        // Pointer moves only matter when they cross into another region.
+        if inside, region == lastHoverRegion { return }
+        lastHoverRegion = region
         for side in [NotchSide.left, .right] {
             if region == side {
                 closeTasks.removeValue(forKey: side)?.cancel()
@@ -412,6 +605,8 @@ final class NotchViewModel {
         }
     }
 
+    @ObservationIgnored private var lastHoverRegion: NotchSide?? = .none
+
     /// Which part of the notch is under the cursor: an ear (with its
     /// shoulder), the notch itself, or nothing.
     func regionUnderCursor(at point: CGPoint? = nil) -> NotchSide? {
@@ -421,8 +616,12 @@ final class NotchViewModel {
         let left = leftWidth > 0 ? leftWidth + Theme.shoulderRadius : 0
         let right = rightWidth > 0 ? rightWidth + Theme.shoulderRadius : 0
         if p.x >= g.notchRect.minX && p.x <= g.notchRect.maxX { return g.hasNotch || left + right > 0 ? .center : nil }
-        if p.x < g.notchRect.minX && p.x >= g.notchRect.minX - left { return .left }
-        if p.x > g.notchRect.maxX && p.x <= g.notchRect.maxX + right { return .right }
+        if p.x < g.notchRect.minX && p.x >= g.notchRect.minX - left {
+            return overInnerPiece(.left, distance: g.notchRect.minX - p.x) ? .center : .left
+        }
+        if p.x > g.notchRect.maxX && p.x <= g.notchRect.maxX + right {
+            return overInnerPiece(.right, distance: p.x - g.notchRect.maxX) ? .center : .right
+        }
         return nil
     }
 
@@ -515,6 +714,7 @@ final class NotchViewModel {
     /// system volume. The axis is locked per gesture so diagonal swipes don't
     /// do both. Returns whether the event was consumed.
     func scroll(_ event: NSEvent, side: NotchSide) -> Bool {
+        if side == .left, cursorOverClaude() { return scrollSessions(event) }
         guard showsMusic(side), let current = nowPlaying.current else { return false }
         if !event.momentumPhase.isEmpty { return true }
 
@@ -533,7 +733,7 @@ final class NotchViewModel {
         let precise = event.hasPreciseScrollingDeltas
         // Sideways over Up Next scrolls the list, not the track.
         if scrollAxis == .horizontal && side == .left && showsQueue { return false }
-        if mode(side) == .collapsed { setMode(side, .peek) }
+        if mode(side) == .collapsed && regionUnderCursor() == side { setMode(side, .peek) }
 
         switch scrollAxis {
         case .horizontal where prefs.scrollToSeek:
@@ -556,6 +756,60 @@ final class NotchViewModel {
         default:
             return false
         }
+        return true
+    }
+
+    // MARK: Switching chats
+
+    @ObservationIgnored private var sessionScroll: CGFloat = 0
+    /// One gesture switches at most once: locked after a switch until the
+    /// fingers lift (trackpad) or the wheel rests for a moment.
+    @ObservationIgnored private var sessionScrollLocked = false
+    @ObservationIgnored private var lastSessionScroll = Date.distantPast
+    @ObservationIgnored private var selectionResetTask: Task<Void, Never>?
+
+    /// Whether the pointer is over Claude's part of the left ear.
+    private func cursorOverClaude() -> Bool {
+        switch content.left {
+        case .claudeGlyph, .claudeDetail: return true
+        case .claudePiece: return geometry.notchRect.minX - NSEvent.mouseLocation.x < claudePieceWidth
+        default: return false
+        }
+    }
+
+    /// Scrolling over Claude switches to the next or previous chat: one
+    /// switch per gesture, after ~60 pt of trackpad travel or a wheel notch.
+    private func scrollSessions(_ event: NSEvent) -> Bool {
+        guard claude.visibleSessions.count > 1 else { return false }
+        let now = Date.now
+        // A new gesture: fingers down, or the wheel resting for 0.45 s.
+        if event.phase.contains(.began) || (event.phase.isEmpty && event.momentumPhase.isEmpty
+            && now.timeIntervalSince(lastSessionScroll) > 0.45)
+        {
+            sessionScroll = 0
+            sessionScrollLocked = false
+        }
+        lastSessionScroll = now
+        // Momentum belongs to the gesture that already switched (or didn't).
+        guard event.momentumPhase.isEmpty, !sessionScrollLocked else { return true }
+        let inverted = event.isDirectionInvertedFromDevice
+        let dy = inverted ? -event.scrollingDeltaY : event.scrollingDeltaY
+        let dx = inverted ? event.scrollingDeltaX : -event.scrollingDeltaX
+        let delta = abs(dy) >= abs(dx) ? dy : dx
+        let step: Int
+        if event.hasPreciseScrollingDeltas {
+            sessionScroll += delta
+            guard abs(sessionScroll) >= 60 else { return true }
+            step = sessionScroll > 0 ? 1 : -1
+        } else {
+            guard abs(delta) >= 1 else { return true }
+            step = delta > 0 ? 1 : -1
+        }
+        sessionScrollLocked = true
+        sessionScroll = 0
+        cycleSession(by: step)
+        if mode(.left) == .collapsed, case .claudeGlyph = content.left { setMode(.left, .peek) }
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         return true
     }
 
@@ -604,5 +858,21 @@ final class NotchViewModel {
             guard !Task.isCancelled else { return }
             self?.hud = nil
         }
+    }
+}
+
+/// Measures text as the ears draw it (system font), so ears can hug their
+/// content. Cached: titles and names change rarely.
+enum TextWidth {
+    private static var cache: [String: CGFloat] = [:]
+
+    static func of(_ text: String, size: CGFloat, weight: NSFont.Weight) -> CGFloat {
+        let key = "\(size)|\(weight.rawValue)|\(text)"
+        if let width = cache[key] { return width }
+        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        let width = ceil((text as NSString).size(withAttributes: [.font: font]).width) + 2
+        if cache.count > 200 { cache.removeAll() }
+        cache[key] = width
+        return width
     }
 }

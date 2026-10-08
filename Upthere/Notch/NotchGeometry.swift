@@ -12,6 +12,15 @@ struct NotchGeometry: Equatable {
     var leftRoom: CGFloat { notchRect.minX - screenFrame.minX }
     var rightRoom: CGFloat { screenFrame.maxX - notchRect.maxX }
 
+    /// A virtual notch moved `offset` left of the screen's center (a real
+    /// notch stays put).
+    func centering(offset: CGFloat) -> NotchGeometry {
+        guard !hasNotch else { return self }
+        var g = self
+        g.notchRect.origin.x = screenFrame.midX - offset
+        return g
+    }
+
     static func make(for screen: NSScreen) -> NotchGeometry {
         let frame = screen.frame
         let top = screen.safeAreaInsets.top

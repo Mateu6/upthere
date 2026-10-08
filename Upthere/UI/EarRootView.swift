@@ -108,7 +108,11 @@ struct EarRootView: View {
         }
         .frame(width: width, height: height)
         .contentShape(Rectangle())
-        .onHover { model.hover(side, inside: $0) }
+        // Continuous: on screens without a notch an ear has an inner piece
+        // and an outer one, and only crossing into the outer one opens it.
+        .onContinuousHover { phase in
+            if case .active = phase { model.hover(side, inside: true) } else { model.hover(side, inside: false) }
+        }
         .onTapGesture { model.tap(side) }
     }
 

@@ -69,6 +69,11 @@ struct SettingsView: View {
                 Picker("Display", selection: $prefs.display) {
                     ForEach(DisplayChoice.allCases) { Text($0.title).tag($0) }
                 }
+                Picker("Center piece without a notch", selection: $prefs.centerPiece) {
+                    ForEach(CenterPiece.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .help("On screens without a notch, what sits in the middle when Claude, music and timers all show")
                 LabeledContent("Keep ear open after leaving") {
                     Slider(value: $prefs.earCloseDelay, in: 0...2, step: 0.1)
                         .frame(width: 180)

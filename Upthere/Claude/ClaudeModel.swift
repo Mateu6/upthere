@@ -43,6 +43,8 @@ struct ClaudeSession: Identifiable, Equatable {
     var lastEvent: Date = .now
     var transcript = TranscriptInfo()
     var terminalBundleID: String?
+    var hostSessionID: String?
+    var tty: String?
     var transcriptPath: String?
     /// Latest status-line snapshot (needs the status-line bridge).
     var status: StatusLineInfo?
@@ -242,6 +244,8 @@ final class ClaudeModel {
         session.lastEvent = .now
         if let cwd = event.cwd { session.cwd = cwd }
         if let bundle = event.terminalBundleID { session.terminalBundleID = bundle }
+        if let host = event.hostSessionID { session.hostSessionID = host }
+        if let tty = event.tty { session.tty = tty }
         if let path = event.transcriptPath { session.transcriptPath = path }
 
         let previous = session.activity
@@ -377,8 +381,79 @@ final class ClaudeModel {
 
     // MARK: Actions
 
+    /// Brings the session forward: its chat in the Claude app, its tab in
+    /// Terminal or iTerm2, its project window in VS Code-like editors, or
+    /// otherwise just the app it runs in.
     func focus(_ session: ClaudeSession) {
+        if let url = Self.desktopURL(for: session) {
+            NSWorkspace.shared.open(url)
+            return
+        }
         let bundleID = session.terminalBundleID ?? "com.apple.Terminal"
+        if Self.editors.contains(bundleID), let cwd = session.cwd,
+            let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        {
+            // Opening a folder that's already open focuses its window.
+            NSWorkspace.shared.open(
+                [URL(fileURLWithPath: cwd, isDirectory: true)], withApplicationAt: app,
+                configuration: NSWorkspace.OpenConfiguration())
+            return
+        }
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.activate()
+        if let script = Self.selectTabScript(bundleID: bundleID, tty: session.tty) {
+            Task { _ = await ScriptRunner.run(script) }
+        }
+    }
+
+    nonisolated static let editors: Set<String> = [
+        "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.todesktop.230313mzl4w4u92",
+        "com.exafunction.windsurf", "dev.zed.Zed", "com.vscodium",
+    ]
+
+    /// `claude://code/continue?session=local_…` opens that session in the
+    /// Claude desktop app.
+    nonisolated static func desktopURL(for session: ClaudeSession) -> URL? {
+        guard let id = session.hostSessionID, id.wholeMatch(of: /local_[A-Za-z0-9-]{1,64}/) != nil else { return nil }
+        return URL(string: "claude://code/continue?session=\(id)")
+    }
+
+    /// AppleScript that selects the tab running on `tty`.
+    nonisolated static func selectTabScript(bundleID: String, tty: String?) -> String? {
+        guard let tty, tty.wholeMatch(of: /\/dev\/tty[a-z]*[0-9]+/) != nil else { return nil }
+        switch bundleID {
+        case "com.apple.Terminal":
+            return """
+                tell application "Terminal"
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            if tty of t is "\(tty)" then
+                                set selected of t to true
+                                set index of w to 1
+                                return
+                            end if
+                        end repeat
+                    end repeat
+                end tell
+                """
+        case "com.googlecode.iterm2":
+            return """
+                tell application "iTerm2"
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            repeat with s in sessions of t
+                                if tty of s is "\(tty)" then
+                                    select w
+                                    select t
+                                    select s
+                                    return
+                                end if
+                            end repeat
+                        end repeat
+                    end repeat
+                end tell
+                """
+        default:
+            return nil
+        }
     }
 }

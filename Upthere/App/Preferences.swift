@@ -40,6 +40,15 @@ enum GlassTint: String, CaseIterable, Identifiable {
     var title: String { self == .clear ? "Clear" : "Album color" }
 }
 
+/// What sits in the middle on screens without a notch when Claude, music
+/// and timers all show.
+enum CenterPiece: String, CaseIterable, Identifiable {
+    case claude, music
+
+    var id: String { rawValue }
+    var title: String { self == .claude ? "Claude" : "Music" }
+}
+
 /// How a usage figure is shown.
 enum UsageFormat: String, CaseIterable, Identifiable {
     case percent
@@ -115,6 +124,7 @@ final class Preferences {
     var theme: NotchTheme { didSet { save(theme.rawValue, "theme") } }
     var glassTint: GlassTint { didSet { save(glassTint.rawValue, "glassTint") } }
     var clearBlackFade: Bool { didSet { save(clearBlackFade, "clearBlackFade") } }
+    var centerPiece: CenterPiece { didSet { save(centerPiece.rawValue, "centerPiece") } }
     /// Briefly open the music ear with title and artist when the track changes.
     var announceTracks: Bool { didSet { save(announceTracks, "announceTracks") } }
     /// Sound bars follow the actual audio (needs audio-capture permission).
@@ -169,6 +179,7 @@ final class Preferences {
         theme = NotchTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .classic
         glassTint = GlassTint(rawValue: defaults.string(forKey: "glassTint") ?? "") ?? .clear
         clearBlackFade = defaults.object(forKey: "clearBlackFade") as? Bool ?? false
+        centerPiece = CenterPiece(rawValue: defaults.string(forKey: "centerPiece") ?? "") ?? .claude
         announceTracks = defaults.object(forKey: "announceTracks") as? Bool ?? true
         liveVisualizer = defaults.object(forKey: "liveVisualizer") as? Bool ?? false
         showQueue = defaults.object(forKey: "showQueue") as? Bool ?? true

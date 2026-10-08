@@ -15,12 +15,13 @@ final class SpotifyAuth {
     static let scopes = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
 
     enum AuthError: LocalizedError {
-        case missingClientID, cancelled, denied(String), badResponse(Int, String)
+        case missingClientID, cancelled, denied(String), player(String), badResponse(Int, String)
         var errorDescription: String? {
             switch self {
             case .missingClientID: "Enter your Spotify app's Client ID first."
             case .cancelled: "Sign-in was cancelled or timed out."
             case .denied(let reason): "Spotify denied access (\(reason))."
+            case .player(let message): "Spotify: \(message)"
             case .badResponse(let code, let body): "Spotify returned \(code): \(body.prefix(160))"
             }
         }

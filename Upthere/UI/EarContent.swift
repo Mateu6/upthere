@@ -17,7 +17,7 @@ struct LeftEarContent: View {
     private var anchor: Anchor? {
         switch content {
         case .musicArt, .musicInfo, .queue: .art
-        case .claudeGlyph, .claudeDetail: .spark
+        case .claudeGlyph, .claudeDetail, .claudePiece: .spark
         case .timer, .timerStrip, .none: nil
         }
     }
@@ -32,11 +32,17 @@ struct LeftEarContent: View {
                         .transition(.blurReplace)
                 } else {
                     details(h: h, music: music)
+                        // Laid out at the ear's width, springing with the
+                        // mask when it changes, so nothing snaps.
+                        .frame(width: model.leftWidth, alignment: .trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .animation(.spring(duration: Theme.earDuration, bounce: 0), value: model.leftWidth)
                         .transition(.blurReplace)
-                        .id(content)
+                        .id(content.identity)
                 }
             }
             .animation(.smooth(duration: 0.28), value: model.showsHUD(on: .left))
+            .animation(.smooth(duration: 0.28), value: content)
 
             anchorView(h: h, music: music)
                 .frame(width: h + 4, height: h)
@@ -51,6 +57,7 @@ struct LeftEarContent: View {
                     artwork: music.artwork, size: h - 10, dimmed: music.current?.isPlaying == false,
                     badge: content == .musicArt ? nil : music.current.map { $0.parentBundleID ?? $0.bundleID }
                 )
+                .hoverLift(scale: 1.08)
                 .onTapGesture { music.activatePlayerApp() }
                 .transition(.blurReplace)
             case .spark:
@@ -99,6 +106,35 @@ struct LeftEarContent: View {
                     .padding(.trailing, 6)
             case .timerStrip:
                 TimerStrip(model: model, stripWidth: model.leftWidth)
+            case .claudePiece(let part):
+                // [timers | Claude] with Claude fixed next to the notch.
+                let piece = model.claudePieceWidth - (h + 4)
+                HStack(spacing: 0) {
+                    switch part {
+                    case .none:
+                        Spacer(minLength: 0)
+                    case .collapsed:
+                        TimerCollapsed(model: model, showsClaude: false)
+                            .padding(.leading, 8)
+                            .padding(.trailing, 8)
+                            .transition(.blurReplace)
+                        PieceDivider()
+                    case .strip:
+                        TimerStrip(
+                            model: model, stripWidth: max(0, model.leftWidth - model.claudePieceWidth), showsClaude: false
+                        )
+                        .transition(.blurReplace)
+                        PieceDivider()
+                    }
+                    if let session = model.selectedSession {
+                        ClaudePiece(model: model, session: session).frame(width: piece, alignment: .trailing)
+                    } else {
+                        Color.clear.frame(width: piece)
+                    }
+                }
+                .padding(.trailing, h + 4)
+                // Grows and shrinks with the ear's own spring.
+                .animation(.spring(duration: Theme.earDuration, bounce: 0), value: piece)
             }
         }
     }
@@ -113,7 +149,7 @@ struct RightEarContent: View {
     private var anchor: Anchor? {
         switch content {
         case .musicBars, .musicControls: .bars
-        case .musicCompact, .musicFull: .art
+        case .musicCompact, .musicFull, .musicWithTimers: .art
         default: nil
         }
     }
@@ -126,14 +162,20 @@ struct RightEarContent: View {
             ZStack {
                 if let hud = model.hud, model.showsHUD(on: .right), let snapshot = music.current {
                     MusicHUDView(hud: hud, snapshot: snapshot, tint: tint, leading: h + 4)
+                        .frame(width: content.isMusicWithTimers ? model.musicPieceWidth : nil)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .transition(.blurReplace)
                 } else {
                     details(music: music, tint: tint)
+                        .frame(width: model.rightWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .animation(.spring(duration: Theme.earDuration, bounce: 0), value: model.rightWidth)
                         .transition(.blurReplace)
-                        .id(content)
+                        .id(content.identity)
                 }
             }
             .animation(.smooth(duration: 0.28), value: model.showsHUD(on: .right))
+            .animation(.smooth(duration: 0.28), value: content)
 
             anchorView(h: h, music: music, tint: tint)
                 .frame(width: h + 4, height: h)
@@ -159,6 +201,7 @@ struct RightEarContent: View {
                     artwork: music.artwork, size: h - 10, dimmed: music.current?.isPlaying == false,
                     badge: content == .musicCompact ? nil : music.current.map { $0.parentBundleID ?? $0.bundleID }
                 )
+                .hoverLift(scale: 1.08)
                 .onTapGesture { music.activatePlayerApp() }
                 .transition(.blurReplace)
             case nil:
@@ -205,6 +248,32 @@ struct RightEarContent: View {
                     .padding(.leading, h + 4)
                     .padding(.trailing, 10)
                 }
+            case .musicWithTimers(let strip):
+                // [music | timers] with music fixed next to the notch.
+                HStack(spacing: 0) {
+                    if let snapshot = music.current {
+                        HStack(spacing: 8) {
+                            TrackText(snapshot: snapshot)
+                            TransportControls(model: music, isPlaying: snapshot.isPlaying, size: 12)
+                        }
+                        .padding(.trailing, 8)
+                        .frame(width: model.musicPieceWidth - (h + 4), alignment: .leading)
+                    }
+                    PieceDivider()
+                    if strip {
+                        TimerStrip(
+                            model: model, stripWidth: max(0, model.rightWidth - model.musicPieceWidth),
+                            showsClaude: false, mirrored: true
+                        )
+                        .transition(.blurReplace)
+                    } else {
+                        TimerCollapsed(model: model, showsClaude: false, mirrored: true)
+                            .padding(.leading, 8)
+                            .padding(.trailing, 8)
+                            .transition(.blurReplace)
+                    }
+                }
+                .padding(.leading, h + 4)
             case .claudeBadge:
                 ClaudeBadge(model: model)
             case .claudeTool(let expanded):
@@ -218,13 +287,16 @@ struct RightEarContent: View {
     /// The seek bar along the ear's bottom edge whenever it shows music.
     @ViewBuilder private func progressLine(tint: NSColor) -> some View {
         switch content {
-        case .musicBars, .musicCompact, .musicControls, .musicFull:
+        case .musicBars, .musicCompact, .musicControls, .musicFull, .musicWithTimers:
             if let snapshot = model.nowPlaying.current {
                 SeekBar(
-                    model: model, snapshot: snapshot, color: tint, interactive: model.mode(.right) != .collapsed
+                    model: model, snapshot: snapshot, color: tint, interactive: model.isOpen(.right)
                 )
                 .padding(.horizontal, 8)
                 .padding(.bottom, 1)
+                // Only under the music when the timers share the ear.
+                .frame(width: content.isMusicWithTimers ? model.musicPieceWidth : nil)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         default:
             EmptyView()
@@ -282,6 +354,28 @@ struct MusicHUDView: View {
     private var label: String {
         switch hud {
         case .volume(let v): "\(Int((v * 100).rounded()))%"
+        }
+    }
+}
+
+private extension RightContent {
+    var isMusicWithTimers: Bool { if case .musicWithTimers = self { true } else { false } }
+
+    /// What a content swap cross-fades between: the shared-ear layouts keep
+    /// one identity, so only their timers part changes, never the music.
+    var identity: String {
+        switch self {
+        case .musicWithTimers: "musicWithTimers"
+        default: "\(self)"
+        }
+    }
+}
+
+private extension LeftContent {
+    var identity: String {
+        switch self {
+        case .claudePiece: "claudePiece"
+        default: "\(self)"
         }
     }
 }

@@ -10,6 +10,8 @@ nonisolated struct QueueItem: Identifiable, Equatable, Sendable {
     let title: String
     let artist: String
     let artworkURL: URL?
+    /// Spotify URI (`spotify:track:…`), for jumping straight to it.
+    var uri: String? = nil
     var id: String { "\(position)|\(title)|\(artist)" }
 }
 
@@ -30,6 +32,7 @@ final class QueueModel {
 
     @ObservationIgnored let spotify: SpotifyAuth
     @ObservationIgnored private var loadedFor: String?
+    @ObservationIgnored private var snapshot: PlaybackSnapshot?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
 
     init(prefs: Preferences) {
@@ -38,6 +41,7 @@ final class QueueModel {
 
     /// Loads the queue for `snapshot` unless it's already loaded for that track.
     func refresh(for snapshot: PlaybackSnapshot?, force: Bool = false) {
+        self.snapshot = snapshot
         guard let snapshot else {
             items = []
             status = .idle
@@ -89,12 +93,16 @@ final class QueueModel {
         Task {
             do {
                 switch bundleID {
-                case KnownPlayers.spotify: try await SpotifyAPI(auth: spotify).skip(times: item.position + 1)
+                case KnownPlayers.spotify: try await SpotifyAPI(auth: spotify).jump(to: item)
                 case KnownPlayers.music: await MusicQueue.play(position: item.position)
                 default: break
                 }
             } catch {
+                // Shown briefly, then Up Next comes back.
                 status = .error(error.localizedDescription)
+                try? await Task.sleep(for: .seconds(5))
+                if case .error = status { status = .idle }
+                refresh(for: snapshot, force: true)
             }
         }
     }
@@ -121,10 +129,88 @@ struct SpotifyAPI {
         return Self.parseQueue(data)
     }
 
-    /// Spotify has no "play queue item N"; skipping N times gets there.
-    /// Needs Spotify Premium.
-    func skip(times: Int) async throws {
-        for _ in 0..<min(times, 20) { _ = try await request("POST", "/v1/me/player/next") }
+    /// Plays an upcoming song directly. Spotify has no "play queue item N",
+    /// so when the song is part of the playing playlist or album it restarts
+    /// that context at the song and checks it landed there (if not, what
+    /// was playing is put back). Otherwise (songs you queued by hand) it
+    /// skips there with the sound muted, so the songs in between aren't
+    /// heard. Needs Spotify Premium.
+    func jump(to item: QueueItem) async throws {
+        let player = await state()
+        let deviceID = (player?["device"] as? [String: Any])?["id"] as? String
+        let onDevice = deviceID.map { "?device_id=\($0)" } ?? ""
+        if let uri = item.uri, let context = Self.jumpContext(player) {
+            do {
+                _ = try await request(
+                    "PUT", "/v1/me/player/play" + onDevice, body: ["context_uri": context, "offset": ["uri": uri]])
+                if await landed(on: uri) { return }
+                queueLog.notice("jump within \(context, privacy: .public) didn't land; restoring")
+            } catch {
+                queueLog.notice("jump within \(context, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            }
+            await restore(player, onDevice: onDevice)
+        }
+        let device = player?["device"] as? [String: Any]
+        let volume = (device?["supports_volume"] as? Bool ?? false) ? device?["volume_percent"] as? Int : nil
+        if volume != nil { _ = try? await request("PUT", "/v1/me/player/volume?volume_percent=0") }
+        var failure: Error?
+        do {
+            for _ in 0..<min(item.position + 1, 20) { _ = try await request("POST", "/v1/me/player/next" + onDevice) }
+        } catch {
+            failure = error
+        }
+        if let volume { _ = try? await request("PUT", "/v1/me/player/volume?volume_percent=\(volume)") }
+        if let failure { throw failure }
+    }
+
+    private func state() async -> [String: Any]? {
+        guard let data = try? await request("GET", "/v1/me/player"), !data.isEmpty else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// Spotify applies a play command asynchronously; give it a moment.
+    private func landed(on uri: String) async -> Bool {
+        for _ in 0..<6 {
+            try? await Task.sleep(for: .milliseconds(250))
+            if let item = await state()?["item"] as? [String: Any], item["uri"] as? String == uri { return true }
+        }
+        return false
+    }
+
+    /// Puts back the song (and position) that was playing before a jump.
+    private func restore(_ player: [String: Any]?, onDevice: String) async {
+        guard let player, let current = (player["item"] as? [String: Any])?["uri"] as? String else { return }
+        var body: [String: Any] = ["position_ms": player["progress_ms"] as? Int ?? 0]
+        if let context = Self.jumpContext(player) {
+            body["context_uri"] = context
+            body["offset"] = ["uri": current]
+        } else {
+            body["uris"] = [current]
+        }
+        _ = try? await request("PUT", "/v1/me/player/play" + onDevice, body: body)
+        if player["is_playing"] as? Bool == false { _ = try? await request("PUT", "/v1/me/player/pause" + onDevice) }
+    }
+
+    /// The playing playlist or album, which can be restarted at a given song.
+    /// (Artist and other contexts don't accept an offset.)
+    nonisolated static func jumpContext(_ player: [String: Any]?) -> String? {
+        guard let context = player?["context"] as? [String: Any],
+            let type = context["type"] as? String, ["playlist", "album"].contains(type)
+        else { return nil }
+        return context["uri"] as? String
+    }
+
+    /// Spotify's own reason, e.g. `{"error":{"status":403,"message":"Player
+    /// command failed: Restriction violated","reason":"UNKNOWN"}}`.
+    nonisolated static func error(status: Int, body: Data) -> SpotifyAuth.AuthError {
+        let error = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? [String: Any]
+        if error?["reason"] as? String == "PREMIUM_REQUIRED" {
+            return .player("Jumping to a song needs Spotify Premium")
+        }
+        if let message = error?["message"] as? String, !message.isEmpty {
+            return .player(message.replacingOccurrences(of: "Player command failed: ", with: ""))
+        }
+        return .badResponse(status, String(decoding: body, as: UTF8.self))
     }
 
     nonisolated static func parseQueue(_ data: Data) -> [QueueItem] {
@@ -144,25 +230,29 @@ struct SpotifyAPI {
                 .first { ($0["width"] as? Int ?? 0) >= 60 } ?? images.last
             return QueueItem(
                 position: index, title: name, artist: artists?.joined(separator: ", ") ?? show ?? "",
-                artworkURL: (image?["url"] as? String).flatMap(URL.init(string:)))
+                artworkURL: (image?["url"] as? String).flatMap(URL.init(string:)), uri: item["uri"] as? String)
         }
     }
 
-    private func request(_ method: String, _ path: String, retry: Bool = true) async throws -> Data {
+    private func request(
+        _ method: String, _ path: String, body: [String: Any]? = nil, retry: Bool = true
+    ) async throws -> Data {
         var request = URLRequest(url: URL(string: "https://api.spotify.com" + path)!)
         request.httpMethod = method
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         request.setValue("Bearer \(try await auth.token())", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 && retry {
             auth.invalidateAccessToken()
-            return try await self.request(method, path, retry: false)
+            return try await self.request(method, path, body: body, retry: false)
         }
         guard (200..<300).contains(status) else {
-            if status == 403 && method == "POST" {
-                throw SpotifyAuth.AuthError.denied("jumping to a song needs Spotify Premium")
-            }
-            throw SpotifyAuth.AuthError.badResponse(status, String(decoding: data, as: UTF8.self))
+            queueLog.error("spotify \(method, privacy: .public) \(path, privacy: .public): \(status) \(String(decoding: data, as: UTF8.self), privacy: .public)")
+            throw Self.error(status: status, body: data)
         }
         return data
     }

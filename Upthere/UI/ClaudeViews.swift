@@ -52,15 +52,18 @@ struct ClaudeDetail: View {
         HStack(spacing: 8) {
             if expanded {
                 pagerButton("arrow.up.forward.app") { model.claude.focus(session) }
-                    .help("Show terminal")
+                    .help(session.hostSessionID != nil ? "Open this chat in Claude" : "Show terminal")
                 if count > 1 {
                     pagerButton("chevron.left") { model.cycleSession(by: -1) }
                     pagerButton("chevron.right") { model.cycleSession(by: 1) }
                 }
             }
             Spacer(minLength: 0)
+            // The chat's title always leads, so switching chats (buttons or
+            // scrolling) shows which one you're on.
             VStack(alignment: .trailing, spacing: 0) {
                 HStack(spacing: 4) {
+                    Spacer(minLength: 0)
                     if count > 1 && !expanded {
                         Text("+\(count - 1)")
                             .font(.system(size: 9, weight: .bold))
@@ -69,14 +72,99 @@ struct ClaudeDetail: View {
                             .background(Capsule().fill(.white.opacity(0.7)))
                     }
                     MarqueeText(
-                        text: expanded ? statusLine : session.projectName,
-                        font: .system(size: expanded ? 11.5 : 12, weight: .semibold),
-                        color: expanded && statusColor != Theme.secondary ? statusColor : .white,
-                        alignment: .trailing)
+                        text: session.projectName, font: .system(size: 12, weight: .semibold), alignment: .trailing,
+                        hugs: true)
+                    if expanded {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
+                                .monospacedDigit()
+                        }
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize()
+                    }
                 }
-                if expanded {
-                    // Expanded: what it's doing, then elapsed time and usage.
+                HStack(spacing: 4) {
+                    MarqueeText(
+                        text: statusLine, font: .system(size: 10.5, weight: .medium), color: statusColor,
+                        alignment: .trailing)
+                    if expanded {
+                        let chips = model.usageChips(for: session)
+                        if !chips.isEmpty {
+                            Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                            UsageChipsView(chips: chips).fixedSize()
+                        }
+                    }
+                }
+            }
+            .lineLimit(1)
+            .id(session.id)
+            .transition(.blurReplace)
+        }
+        .animation(.smooth(duration: 0.25), value: session.id)
+    }
+
+    private var statusLine: String { session.statusLine }
+    private var statusColor: Color { session.statusColor }
+
+    private func pagerButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white.opacity(0.8))
+                .frame(width: 20, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverButtonStyle())
+    }
+}
+
+extension ClaudeSession {
+    /// What it's doing, with the tool's target or the question asked.
+    var statusLine: String {
+        switch activity {
+        case .tool(_, let detail?), .permission(_, let detail?): return "\(statusText) · \(detail)"
+        case .input(let prompt?): return prompt
+        default: return statusText
+        }
+    }
+
+    var statusColor: Color {
+        switch activity {
+        case .permission: Color(nsColor: Theme.amber)
+        case .input: Color(nsColor: Theme.input)
+        default: Theme.secondary
+        }
+    }
+}
+
+/// Claude's piece on screens without a notch: project and status, reading
+/// outwards from the spark. Hovering swaps the status for time and usage;
+/// clicking opens the chat.
+struct ClaudePiece: View {
+    let model: NotchViewModel
+    let session: ClaudeSession
+
+    var body: some View {
+        let count = model.claude.visibleSessions.count
+        let hovering = model.claudePieceHovered
+        VStack(alignment: .trailing, spacing: 0) {
+            HStack(spacing: 4) {
+                Spacer(minLength: 0)
+                if count > 1 {
+                    Text("+\(count - 1)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 4)
+                        .background(Capsule().fill(.white.opacity(0.7)))
+                }
+                MarqueeText(
+                    text: session.projectName, font: .system(size: 12, weight: .semibold), alignment: .trailing, hugs: true)
+            }
+            ZStack(alignment: .trailing) {
+                if hovering {
                     HStack(spacing: 4) {
+                        Spacer(minLength: 0)
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
                                 .monospacedDigit()
@@ -89,41 +177,38 @@ struct ClaudeDetail: View {
                             UsageChipsView(chips: chips)
                         }
                     }
+                    .transition(.blurReplace)
                 } else {
                     MarqueeText(
-                        text: statusLine, font: .system(size: 10.5, weight: .medium), color: statusColor,
-                        alignment: .trailing)
+                        text: session.statusLine, font: .system(size: 10.5, weight: .medium), color: session.statusColor,
+                        alignment: .trailing
+                    )
+                    .transition(.blurReplace)
                 }
             }
             .lineLimit(1)
         }
-    }
-
-    private var statusLine: String {
-        switch session.activity {
-        case .tool(_, let detail?), .permission(_, let detail?): return "\(session.statusText) · \(detail)"
-        case .input(let prompt?): return prompt
-        default: return session.statusText
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.leading, 10)
+        .padding(.trailing, 2)
+        .contentShape(Rectangle())
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.white.opacity(hovering ? 0.07 : 0))
+                .padding(.vertical, 3)
         }
+        .onHover { model.claudePieceHovered = $0 }
+        .onDisappear { model.claudePieceHovered = false }
+        .animation(.smooth(duration: 0.22), value: hovering)
+        .onTapGesture { model.claude.focus(session) }
+        .help(session.hostSessionID != nil ? "Open this chat in Claude" : "Show terminal")
     }
+}
 
-    private var statusColor: Color {
-        switch session.activity {
-        case .permission: Color(nsColor: Theme.amber)
-        case .input: Color(nsColor: Theme.input)
-        default: Theme.secondary
-        }
-    }
-
-    private func pagerButton(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.white.opacity(0.8))
-                .frame(width: 20, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(HoverButtonStyle())
+/// A hairline between pieces sharing an ear.
+struct PieceDivider: View {
+    var body: some View {
+        Capsule().fill(.white.opacity(0.14)).frame(width: 1).padding(.vertical, 9)
     }
 }
 

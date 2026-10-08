@@ -27,6 +27,10 @@ nonisolated struct HookEvent: Sendable, Equatable {
     var question: String?
     var terminalBundleID: String?
     var terminalProgram: String?
+    /// The Claude desktop app's id for the session (`local_…`), when it runs there.
+    var hostSessionID: String?
+    /// The terminal tab's tty, e.g. `/dev/ttys004`.
+    var tty: String?
 
     static func question(tool: String?, input: [String: Any]?) -> String? {
         switch tool {
@@ -62,7 +66,9 @@ nonisolated struct HookEvent: Sendable, Equatable {
             notificationType: payload["notification_type"] as? String,
             question: Self.question(tool: toolName, input: toolInput),
             terminalBundleID: root["bundle"] as? String,
-            terminalProgram: root["term"] as? String
+            terminalProgram: root["term"] as? String,
+            hostSessionID: root["host"] as? String,
+            tty: root["tty"] as? String
         )
     }
 }

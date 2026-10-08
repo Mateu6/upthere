@@ -12,6 +12,7 @@ struct QueueStrip: View {
             switch queue.status {
             case .needsSpotifyLogin:
                 hint("Connect Spotify in Settings to see Up Next", systemImage: "link")
+                    .hoverLift(scale: 1.02)
                     .onTapGesture { model.openSettings() }
             case .error(let message):
                 hint(message, systemImage: "exclamationmark.triangle")
@@ -69,22 +70,17 @@ struct QueueStrip: View {
     }
 
     private func hint(_ text: String, systemImage: String) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(Theme.secondary)
-            .lineLimit(1)
+        // Rolls instead of truncating when it doesn't fit.
+        HStack(spacing: 5) {
+            Image(systemName: systemImage).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary)
+            MarqueeText(text: text, font: .system(size: 10, weight: .medium), color: Theme.secondary)
+        }
     }
 }
 
 struct ChipButtonStyle: ButtonStyle {
-    @State private var hovering = false
-
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.white.opacity(hovering ? 0.12 : 0)))
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-            .onHover { hovering = $0 }
+        RowButtonStyle().makeBody(configuration: configuration)
     }
 }
 

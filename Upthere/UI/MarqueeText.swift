@@ -8,6 +8,9 @@ struct MarqueeText: View {
     let font: Font
     var color: Color = .white
     var alignment: Alignment = .leading
+    /// Take only the text's own width (when it fits) instead of all that's
+    /// offered, so things beside it stay close.
+    var hugs = false
 
     @State private var textWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
@@ -21,7 +24,7 @@ struct MarqueeText: View {
             .font(font)
             .lineLimit(1)
             .opacity(0)
-            .frame(maxWidth: .infinity, alignment: alignment)
+            .frame(maxWidth: hugs ? nil : .infinity, alignment: alignment)
             .overlay {
                 GeometryReader { proxy in
                     let overflow = max(0, textWidth - proxy.size.width)

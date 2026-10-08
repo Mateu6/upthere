@@ -71,6 +71,22 @@ struct HookEventTests {
         #expect(e.terminalBundleID == "com.mitchellh.ghostty")
     }
 
+    @Test func focusTargetsTheExactSession() throws {
+        let e = try #require(
+            event(
+                #"{"v":1,"bundle":"com.anthropic.claudefordesktop","host":"local_d1a8-90d3","tty":null,"payload":{"hook_event_name":"Stop","session_id":"s1"}}"#
+            ))
+        #expect(e.hostSessionID == "local_d1a8-90d3")
+        var session = ClaudeSession(id: "s1")
+        session.hostSessionID = e.hostSessionID
+        #expect(ClaudeModel.desktopURL(for: session)?.absoluteString == "claude://code/continue?session=local_d1a8-90d3")
+        session.hostSessionID = "local_x&y=1"
+        #expect(ClaudeModel.desktopURL(for: session) == nil)
+        #expect(ClaudeModel.selectTabScript(bundleID: "com.apple.Terminal", tty: "/dev/ttys004")?.contains("\"/dev/ttys004\"") == true)
+        #expect(ClaudeModel.selectTabScript(bundleID: "com.apple.Terminal", tty: "/dev/ttys004\" & quit") == nil)
+        #expect(ClaudeModel.selectTabScript(bundleID: "com.mitchellh.ghostty", tty: "/dev/ttys004") == nil)
+    }
+
     @Test func toolDetails() {
         #expect(ToolInfo.detail(tool: "Bash", input: ["command": "swift build\nswift test"]) == "swift build")
         #expect(ToolInfo.detail(tool: "Bash", input: ["command": "ls", "description": "List files"]) == "List files")
@@ -307,6 +323,35 @@ struct PerEarTests {
     }
 }
 
+@MainActor
+struct NotchlessTests {
+    @Test func claudeAndTimersShareOneEarAndOnlyTheOuterPieceOpens() {
+        let prefs = Preferences(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)
+        let claude = ClaudeModel()
+        claude.handle(HookEvent.parse(Data(#"{"hook_event_name":"UserPromptSubmit","session_id":"s","cwd":"/p"}"#.utf8))!)
+        let timers = TimerModel(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)
+        _ = timers.start("tea 4m")
+        // A 2560-wide external display: a zero-width virtual notch, 24pt tall.
+        let geometry = NotchGeometry(
+            screenFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
+            notchRect: CGRect(x: 1280, y: 1416, width: 0, height: 24), hasNotch: false)
+        let model = NotchViewModel(
+            nowPlaying: NowPlayingModel(prefs: prefs), claude: claude, prefs: prefs, geometry: geometry, timers: timers)
+
+        // [timers | Claude], centered as a whole.
+        #expect(model.content.left == .claudePiece(timers: .collapsed))
+        #expect(model.content.right == .none)
+        #expect(model.restingCenterOffset == -(model.leftWidth / 2).rounded())
+        // Over Claude's piece: nothing opens. Over the timers: the left ear.
+        #expect(model.regionUnderCursor(at: CGPoint(x: 1280 - 100, y: 1430)) == .center)
+        #expect(model.regionUnderCursor(at: CGPoint(x: 1280 - model.claudePieceWidth - 20, y: 1430)) == .left)
+        model.debugSet(left: .peek, right: .collapsed)
+        #expect(model.content.left == .claudePiece(timers: .strip))
+        // Once open, moving back over Claude keeps it open.
+        #expect(model.regionUnderCursor(at: CGPoint(x: 1280 - 100, y: 1430)) == .left)
+    }
+}
+
 struct UpNextTests {
     @Test func pkceMatchesRFC7636() {
         #expect(PKCE.challenge(for: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk") == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
@@ -322,12 +367,27 @@ struct UpNextTests {
     }
 
     @Test func parsesSpotifyQueue() {
-        let json = #"{"currently_playing":{"name":"Now"},"queue":[{"name":"Next","artists":[{"name":"A"},{"name":"B"}],"album":{"images":[{"url":"https://i/640","width":640},{"url":"https://i/64","width":64}]}},{"name":"Episode","show":{"name":"Pod"},"images":[{"url":"https://i/e","width":300}]}]}"#
+        let json = #"{"currently_playing":{"name":"Now"},"queue":[{"name":"Next","artists":[{"name":"A"},{"name":"B"}],"uri":"spotify:track:1","album":{"images":[{"url":"https://i/640","width":640},{"url":"https://i/64","width":64}]}},{"name":"Episode","show":{"name":"Pod"},"images":[{"url":"https://i/e","width":300}]}]}"#
         let items = SpotifyAPI.parseQueue(Data(json.utf8))
         #expect(items.count == 2)
         #expect(items[0].title == "Next" && items[0].artist == "A, B" && items[0].position == 0)
         #expect(items[0].artworkURL?.absoluteString == "https://i/64")
         #expect(items[1].artist == "Pod" && items[1].position == 1)
+        #expect(items[0].uri == "spotify:track:1" && items[1].uri == nil)
+    }
+
+    @Test func jumpsWithinPlaylistsAndAlbumsOnly() {
+        func player(_ type: String) -> [String: Any] { ["context": ["type": type, "uri": "spotify:\(type):x"]] }
+        #expect(SpotifyAPI.jumpContext(player("playlist")) == "spotify:playlist:x")
+        #expect(SpotifyAPI.jumpContext(player("album")) == "spotify:album:x")
+        #expect(SpotifyAPI.jumpContext(player("artist")) == nil)
+        #expect(SpotifyAPI.jumpContext([:]) == nil)
+    }
+
+    @Test func reportsSpotifysOwnReason() {
+        func message(_ json: String) -> String? { SpotifyAPI.error(status: 403, body: Data(json.utf8)).errorDescription }
+        #expect(message(#"{"error":{"status":403,"message":"Player command failed: Restriction violated","reason":"UNKNOWN"}}"#) == "Spotify: Restriction violated")
+        #expect(message(#"{"error":{"status":403,"message":"x","reason":"PREMIUM_REQUIRED"}}"#) == "Spotify: Jumping to a song needs Spotify Premium")
     }
 
     @Test func parsesMusicQueue() {

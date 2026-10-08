@@ -123,11 +123,9 @@ struct TimerInputView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 3)
                                 .padding(.horizontal, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6).fill(.white.opacity(highlighted == index ? 0.12 : 0)))
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(RowButtonStyle(highlighted: highlighted == index, tint: .primary))
                     }
                 }
             }
@@ -178,27 +176,27 @@ struct TimerInputView: View {
                     } label: {
                         Image(systemName: timer.isPinned ? "pin.fill" : "pin")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(PanelIconButtonStyle())
                     .help(timer.isPinned ? "Unpin" : "Keep visible in the notch")
                     Button {
                         timers.togglePause(timer.id)
                     } label: {
                         Image(systemName: timer.isPaused ? "play.fill" : "pause.fill")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(PanelIconButtonStyle())
                     Button {
                         timers.stop(timer.id)
                     } label: {
                         Image(systemName: "stop.fill")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(PanelIconButtonStyle())
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
                     .help("Stop and log (⌘\(index + 1))")
                 }
             }
             if timers.timers.count > 1 {
                 Button("Stop all and log") { timers.stopAll() }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(PanelIconButtonStyle())
                     .font(.system(size: 11.5))
                     .keyboardShortcut(.delete, modifiers: .command)
             }
@@ -215,5 +213,36 @@ struct TimerInputView: View {
     private func start() {
         guard !parsed.label.isEmpty, timers.start(text) != nil else { return }
         close()
+    }
+}
+
+/// Small icon buttons in the timer field: a soft rounded highlight fades in
+/// under the pointer.
+private struct PanelIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
+            .buttonStyle(.plain)
+            .modifier(RowHover(pressed: configuration.isPressed))
+    }
+
+    private struct RowHover: ViewModifier {
+        let pressed: Bool
+        @State private var hovering = false
+
+        func body(content: Content) -> some View {
+            content
+                .background {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(.primary.opacity(pressed ? 0.16 : hovering ? 0.1 : 0))
+                }
+                .scaleEffect(pressed ? 0.94 : 1)
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+                .animation(.spring(duration: 0.2, bounce: 0), value: pressed)
+                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+        }
     }
 }
