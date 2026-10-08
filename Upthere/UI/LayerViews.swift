@@ -89,6 +89,8 @@ final class AudioBarsNSView: NSView {
     /// canned bounce whenever no audio data arrives). Otherwise a render-
     /// server animation, or rest when paused.
     private func updateDriver() {
+        // Audio is captured only while live bars are actually on screen.
+        VisualizerViewers.shared.set(self, watching: live && window != nil)
         if playing && live && window != nil {
             if link == nil {
                 let link = displayLink(target: self, selector: #selector(tick(_:)))

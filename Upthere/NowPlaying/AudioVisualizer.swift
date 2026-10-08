@@ -1,6 +1,7 @@
 import Accelerate
 import AudioToolbox
 import CoreAudio
+import Observation
 import QuartzCore
 import os
 
@@ -28,11 +29,27 @@ nonisolated final class LevelStore: @unchecked Sendable {
     }
 }
 
+/// Live sound bars currently on screen. System audio is tapped only while
+/// there is at least one: never for a cover-only or hidden music ear.
+@Observable
+final class VisualizerViewers {
+    static let shared = VisualizerViewers()
+
+    private(set) var count = 0
+    @ObservationIgnored private var viewers: Set<ObjectIdentifier> = []
+
+    func set(_ viewer: AnyObject, watching: Bool) {
+        let id = ObjectIdentifier(viewer)
+        if watching { viewers.insert(id) } else { viewers.remove(id) }
+        if count != viewers.count { count = viewers.count }
+    }
+}
+
 /// Taps the playing app's audio with a Core Audio process tap (macOS 14.2+)
 /// and turns it into four band levels for the sound bars.
 ///
 /// Costs nothing until started; runs only while music plays with the live
-/// visualizer on. macOS asks once for permission to capture app audio.
+/// visualizer on and live bars on screen (`VisualizerViewers`). macOS asks once for permission to capture app audio.
 final class AudioVisualizer {
     static let shared = AudioVisualizer()
 
@@ -65,6 +82,7 @@ final class AudioVisualizer {
     func resetFailures() { failedBundleID = nil }
 
     func stop() {
+        if let runningBundleID { visualizerLog.info("stopped tapping \(runningBundleID, privacy: .public)") }
         if let procID, aggregateID != kAudioObjectUnknown {
             AudioDeviceStop(aggregateID, procID)
             AudioDeviceDestroyIOProcID(aggregateID, procID)

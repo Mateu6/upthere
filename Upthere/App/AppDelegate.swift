@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notch: NotchWindowController?
     private var settings: SettingsWindowController?
     private var signalSources: [DispatchSourceSignal] = []
+    private var visualizerStopTask: Task<Void, Never>?
 
     private var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -87,15 +88,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Taps the player's audio only while music plays with the live
-    /// visualizer on.
+    /// visualizer on and live sound bars are on screen. When the bars go
+    /// away (e.g. the ear switches to the cover) the tap stops after a short
+    /// grace period, so quick layout swaps don't restart it.
     private func syncVisualizer() {
-        let target = withObservationTracking { () -> String? in
-            guard prefs.liveVisualizer, let current = nowPlaying.current, current.isPlaying else { return nil }
-            return current.parentBundleID ?? current.bundleID
+        let (target, enabled) = withObservationTracking { () -> (String?, Bool) in
+            guard prefs.liveVisualizer else { return (nil, false) }
+            guard VisualizerViewers.shared.count > 0, let current = nowPlaying.current, current.isPlaying else {
+                return (nil, true)
+            }
+            return (current.parentBundleID ?? current.bundleID, true)
         } onChange: { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncVisualizer() } }
         }
-        if !prefs.liveVisualizer { AudioVisualizer.shared.resetFailures() }
+        visualizerStopTask?.cancel()
+        if !enabled { AudioVisualizer.shared.resetFailures() }
+        if target == nil, enabled, AudioVisualizer.shared.runningBundleID != nil {
+            visualizerStopTask = Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                AudioVisualizer.shared.run(for: nil)
+            }
+            return
+        }
         AudioVisualizer.shared.run(for: target)
     }
 
