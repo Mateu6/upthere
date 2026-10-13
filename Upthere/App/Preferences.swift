@@ -40,6 +40,13 @@ enum GlassTint: String, CaseIterable, Identifiable {
     var title: String { self == .clear ? "Clear" : "Album color" }
 }
 
+/// A theme with its Glass options, as applied to one kind of screen.
+struct Appearance: Equatable {
+    var theme: NotchTheme
+    var glassTint: GlassTint
+    var blackFade: Bool
+}
+
 /// What sits in the middle on screens without a notch when Claude, music
 /// and timers all show.
 enum CenterPiece: String, CaseIterable, Identifiable {
@@ -125,6 +132,30 @@ final class Preferences {
     var glassTint: GlassTint { didSet { save(glassTint.rawValue, "glassTint") } }
     var clearBlackFade: Bool { didSet { save(clearBlackFade, "clearBlackFade") } }
     var centerPiece: CenterPiece { didSet { save(centerPiece.rawValue, "centerPiece") } }
+    /// Screens without a notch can have their own theme (the settings above
+    /// then apply to notched screens only).
+    var separateNotchlessTheme: Bool {
+        didSet {
+            save(separateNotchlessTheme, "separateNotchlessTheme")
+            // Start from the current look rather than a surprise.
+            if separateNotchlessTheme && !oldValue && defaults.object(forKey: "notchlessTheme") == nil {
+                notchlessTheme = theme
+                notchlessGlassTint = glassTint
+                notchlessBlackFade = clearBlackFade
+            }
+        }
+    }
+    var notchlessTheme: NotchTheme { didSet { save(notchlessTheme.rawValue, "notchlessTheme") } }
+    var notchlessGlassTint: GlassTint { didSet { save(notchlessGlassTint.rawValue, "notchlessGlassTint") } }
+    var notchlessBlackFade: Bool { didSet { save(notchlessBlackFade, "notchlessBlackFade") } }
+
+    /// The look for a screen with or without a notch.
+    func appearance(hasNotch: Bool) -> Appearance {
+        if !hasNotch && separateNotchlessTheme {
+            return Appearance(theme: notchlessTheme, glassTint: notchlessGlassTint, blackFade: notchlessBlackFade)
+        }
+        return Appearance(theme: theme, glassTint: glassTint, blackFade: clearBlackFade)
+    }
     /// Briefly open the music ear with title and artist when the track changes.
     var announceTracks: Bool { didSet { save(announceTracks, "announceTracks") } }
     /// Sound bars follow the actual audio (needs audio-capture permission).
@@ -180,6 +211,16 @@ final class Preferences {
         glassTint = GlassTint(rawValue: defaults.string(forKey: "glassTint") ?? "") ?? .clear
         clearBlackFade = defaults.object(forKey: "clearBlackFade") as? Bool ?? false
         centerPiece = CenterPiece(rawValue: defaults.string(forKey: "centerPiece") ?? "") ?? .claude
+        separateNotchlessTheme = defaults.object(forKey: "separateNotchlessTheme") as? Bool ?? false
+        // Until set, the notchless look mirrors the notched one.
+        notchlessTheme =
+            NotchTheme(rawValue: defaults.string(forKey: "notchlessTheme") ?? defaults.string(forKey: "theme") ?? "")
+            ?? .classic
+        notchlessGlassTint =
+            GlassTint(rawValue: defaults.string(forKey: "notchlessGlassTint") ?? defaults.string(forKey: "glassTint") ?? "")
+            ?? .clear
+        notchlessBlackFade =
+            defaults.object(forKey: "notchlessBlackFade") as? Bool ?? defaults.object(forKey: "clearBlackFade") as? Bool ?? false
         announceTracks = defaults.object(forKey: "announceTracks") as? Bool ?? true
         liveVisualizer = defaults.object(forKey: "liveVisualizer") as? Bool ?? false
         showQueue = defaults.object(forKey: "showQueue") as? Bool ?? true

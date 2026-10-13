@@ -161,6 +161,10 @@ final class NotchViewModel {
 
     var content: (left: LeftContent, right: RightContent) { content(left: effectiveLeftMode, right: rightMode) }
 
+    /// The theme for the screen the notch is on (screens without a notch
+    /// can have their own).
+    var appearance: Appearance { prefs.appearance(hasNotch: geometry.hasNotch) }
+
     /// Notchless screens have room to spare: the music ear rests showing
     /// title, artist and controls instead of just the bars.
     var musicRestsOpen: Bool { !geometry.hasNotch }

@@ -43,6 +43,11 @@ enum DebugBridge {
                 case "theme-aurora": model.prefs.theme = .aurora
                 case "theme-classic": model.prefs.theme = .classic
                 case "theme-clear": model.prefs.theme = .clear
+                case "split-theme-on": model.prefs.separateNotchlessTheme = true
+                case "split-theme-off": model.prefs.separateNotchlessTheme = false
+                case "nl-theme-aurora": model.prefs.notchlessTheme = .aurora
+                case "nl-theme-classic": model.prefs.notchlessTheme = .classic
+                case "nl-theme-clear": model.prefs.notchlessTheme = .clear
                 case "clear-fade-on": model.prefs.clearBlackFade = true
                 case "clear-fade-off": model.prefs.clearBlackFade = false
                 case "center-claude": model.prefs.centerPiece = .claude

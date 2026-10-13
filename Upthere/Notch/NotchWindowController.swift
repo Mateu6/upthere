@@ -49,7 +49,7 @@ final class NotchWindowController {
 
     private func configure() {
         let g = viewModel.geometry
-        let layerMask = prefs.theme != .clear
+        let layerMask = viewModel.appearance.theme != .clear
         left.configure(geometry: g, maxEar: viewModel.maxEarWidth(room: g.leftRoom), layerMask: layerMask)
         right.configure(geometry: g, maxEar: viewModel.maxEarWidth(room: g.rightRoom), layerMask: layerMask)
         left.setEar(viewModel.leftWidth, animated: false)
@@ -100,6 +100,8 @@ final class NotchWindowController {
             _ = prefs.display
             _ = prefs.maxEarWidth
             _ = prefs.theme
+            _ = prefs.separateNotchlessTheme
+            _ = prefs.notchlessTheme
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {

@@ -40,7 +40,7 @@ struct EarRootView: View {
         let alignment: Alignment = side == .left ? .trailing : .leading
 
         Group {
-            if model.prefs.theme == .clear {
+            if model.appearance.theme == .clear {
                 glassBand(width: width, height: height, half: half, alignment: alignment)
             } else {
                 ZStack {
@@ -82,7 +82,7 @@ struct EarRootView: View {
         let spring = Animation.spring(duration: Theme.earDuration, bounce: 0)
         return ZStack(alignment: alignment) {
             GlassFill(
-                tinted: model.prefs.glassTint == .color, blackFade: model.prefs.clearBlackFade,
+                tinted: model.appearance.glassTint == .color, blackFade: model.appearance.blackFade,
                 colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side, notchHalf: half,
                 shape: shape
             )
@@ -136,7 +136,7 @@ private struct Background: View {
     let earOpen: Bool
 
     var body: some View {
-        switch model.prefs.theme {
+        switch model.appearance.theme {
         case .aurora where earOpen:
             AuroraFill(colors: model.palette(for: side).map { Color(nsColor: $0) }, side: side, notchHalf: notchHalf)
         default:

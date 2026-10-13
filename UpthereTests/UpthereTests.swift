@@ -324,6 +324,28 @@ struct PerEarTests {
 }
 
 @MainActor
+struct AppearanceTests {
+    @Test func notchlessScreensCanHaveTheirOwnTheme() {
+        let defaults = UserDefaults(suiteName: "upthere.tests.\(UUID())")!
+        let prefs = Preferences(defaults: defaults)
+        prefs.theme = .clear
+        prefs.glassTint = .color
+        // Off: one theme everywhere.
+        #expect(prefs.appearance(hasNotch: false) == prefs.appearance(hasNotch: true))
+        // On: starts as a copy of the current look, then diverges.
+        prefs.separateNotchlessTheme = true
+        #expect(prefs.appearance(hasNotch: false).theme == .clear)
+        prefs.notchlessTheme = .aurora
+        #expect(prefs.appearance(hasNotch: false).theme == .aurora)
+        #expect(prefs.appearance(hasNotch: true).theme == .clear)
+        // Persisted.
+        let reloaded = Preferences(defaults: defaults)
+        #expect(reloaded.appearance(hasNotch: false).theme == .aurora)
+        #expect(reloaded.appearance(hasNotch: true) == Appearance(theme: .clear, glassTint: .color, blackFade: false))
+    }
+}
+
+@MainActor
 struct NotchlessTests {
     @Test func claudeAndTimersShareOneEarAndOnlyTheOuterPieceOpens() {
         let prefs = Preferences(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)

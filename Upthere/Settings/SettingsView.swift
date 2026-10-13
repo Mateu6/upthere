@@ -56,15 +56,14 @@ struct SettingsView: View {
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
                     }
-                Picker("Theme", selection: $prefs.theme) {
-                    ForEach(NotchTheme.allCases) { Text($0.title).tag($0) }
-                }
-                if prefs.theme == .clear {
-                    Picker("Glass", selection: $prefs.glassTint) {
-                        ForEach(GlassTint.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    Toggle("Black gradient (like Aurora)", isOn: $prefs.clearBlackFade)
+                themePickers(
+                    prefs.separateNotchlessTheme ? "Theme with a notch" : "Theme",
+                    theme: $prefs.theme, tint: $prefs.glassTint, fade: $prefs.clearBlackFade)
+                Toggle("Different theme on screens without a notch", isOn: $prefs.separateNotchlessTheme.animation())
+                if prefs.separateNotchlessTheme {
+                    themePickers(
+                        "Theme without a notch", theme: $prefs.notchlessTheme, tint: $prefs.notchlessGlassTint,
+                        fade: $prefs.notchlessBlackFade)
                 }
                 Picker("Display", selection: $prefs.display) {
                     ForEach(DisplayChoice.allCases) { Text($0.title).tag($0) }
@@ -313,6 +312,23 @@ struct SettingsView: View {
             }
             spotifyBusy = false
             NSApp.activate()
+        }
+    }
+
+    /// A theme picker with its Glass options (shown for the Glass theme).
+    @ViewBuilder
+    private func themePickers(
+        _ title: String, theme: Binding<NotchTheme>, tint: Binding<GlassTint>, fade: Binding<Bool>
+    ) -> some View {
+        Picker(title, selection: theme.animation()) {
+            ForEach(NotchTheme.allCases) { Text($0.title).tag($0) }
+        }
+        if theme.wrappedValue == .clear {
+            Picker("Glass", selection: tint) {
+                ForEach(GlassTint.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Toggle("Black gradient (like Aurora)", isOn: fade)
         }
     }
 
