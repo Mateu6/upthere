@@ -34,6 +34,8 @@ enum DebugBridge {
                 case "timer-pin-all": for t in model.timers.timers where !t.isPinned { model.timers.togglePin(t.id) }
                 case "claude-off": model.prefs.claudeEnabled = false
                 case "claude-on": model.prefs.claudeEnabled = true
+                case "demo-on": model.claude.demoOnly = true
+                case "demo-off": model.claude.demoOnly = false
                 case "music-off": model.nowPlaying.debugHidden = true
                 case "music-on": model.nowPlaying.debugHidden = false
                 case "pause-fake": model.nowPlaying.debugPaused = true

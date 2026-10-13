@@ -120,6 +120,17 @@ final class ClaudeModel {
     /// How long a finished turn stays visible.
     static let doneLinger: Duration = .seconds(10)
 
+    #if DEBUG
+    /// Demo recordings: show only staged `demo-…` sessions, so real Claude
+    /// Code sessions running on the machine don't leak into the take.
+    @ObservationIgnored var demoOnly = false {
+        didSet {
+            guard demoOnly else { return }
+            for session in sessions where !session.id.hasPrefix("demo-") { remove(session.id) }
+        }
+    }
+    #endif
+
     // MARK: Derived state
 
     var visibleSessions: [ClaudeSession] {
@@ -240,6 +251,9 @@ final class ClaudeModel {
     // MARK: Events
 
     func handle(_ event: HookEvent) {
+        #if DEBUG
+        if demoOnly && !event.sessionID.hasPrefix("demo-") { return }
+        #endif
         var session = sessions.first { $0.id == event.sessionID } ?? ClaudeSession(id: event.sessionID)
         session.lastEvent = .now
         if let cwd = event.cwd { session.cwd = cwd }
