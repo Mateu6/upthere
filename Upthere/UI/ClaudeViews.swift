@@ -287,24 +287,22 @@ struct ClaudeBadge: View {
             .animation(.spring(duration: 0.24, bounce: 0), value: count)
     }
 
-    @ViewBuilder private var activity: some View {
-        if case .tool(let name, _) = model.selectedSession?.activity {
-            Image(systemName: ToolInfo.symbol(name))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
-                .contentTransition(.symbolEffect(.replace))
-        } else if case .permission = model.selectedSession?.activity {
-            Image(systemName: "hand.raised.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color(nsColor: Theme.amber))
-        } else if case .input = model.selectedSession?.activity {
-            Image(systemName: "questionmark.bubble.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color(nsColor: Theme.input))
-        } else {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white.opacity(0.7))
-        }
+    /// One symbol per state, so a change animates as a symbol replace.
+    private var activity: some View {
+        let (symbol, color): (String, Color) =
+            switch model.selectedSession?.activity {
+            case .tool(let name, _): (ToolInfo.symbol(name), .white.opacity(0.85))
+            case .permission: ("hand.raised.fill", Color(nsColor: Theme.amber))
+            case .input: ("questionmark.bubble.fill", Color(nsColor: Theme.input))
+            case .thinking: ("brain", .white.opacity(0.85))
+            case .compacting: ("arrow.down.right.and.arrow.up.left", .white.opacity(0.85))
+            case .done: ("text.bubble.fill", .white.opacity(0.75))
+            case .idle, nil: ("moon.zzz.fill", Theme.secondary)
+            }
+        return Image(systemName: symbol)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(color)
+            .contentTransition(.symbolEffect(.replace))
+            .animation(.smooth(duration: 0.25), value: symbol)
     }
 }

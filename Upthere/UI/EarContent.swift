@@ -281,7 +281,9 @@ struct RightEarContent: View {
                 }
                 .padding(.leading, h + 4)
             case .claudeBadge:
+                // Centred like the left ear's spark, mirroring it across the notch.
                 ClaudeBadge(model: model)
+                    .frame(width: h + 4, height: h)
             case .claudeTool(let expanded):
                 if let session = model.selectedSession {
                     ClaudeToolDetail(
