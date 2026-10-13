@@ -262,35 +262,49 @@ struct ClaudeToolDetail: View {
     }
 }
 
-/// Right ear for Claude-only, collapsed: a tiny hint of what's happening.
+/// Right ear for Claude-only, collapsed: a tiny hint of what's happening,
+/// with a Dock-style count when more than one session is running.
 struct ClaudeBadge: View {
     let model: NotchViewModel
 
     var body: some View {
         let count = model.claude.visibleSessions.count
-        Group {
-            if count > 1 {
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
-                    .foregroundStyle(.white)
-            } else if case .tool(let name, _) = model.selectedSession?.activity {
-                Image(systemName: ToolInfo.symbol(name))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .contentTransition(.symbolEffect(.replace))
-            } else if case .permission = model.selectedSession?.activity {
-                Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(nsColor: Theme.amber))
-            } else if case .input = model.selectedSession?.activity {
-                Image(systemName: "questionmark.bubble.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(nsColor: Theme.input))
-            } else {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.7))
+        activity
+            .frame(width: 16, height: 16)
+            .overlay(alignment: .topTrailing) {
+                if count > 1 {
+                    Text("\(count)")
+                        .font(.system(size: 8.5, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                        .padding(.horizontal, 3)
+                        .frame(minWidth: 12, minHeight: 12)
+                        .background(Capsule().fill(Color(nsColor: Theme.claude)))
+                        .offset(x: 7, y: -6)
+                        .transition(.blurReplace.combined(with: .scale(0.5)))
+                }
             }
+            .animation(.spring(duration: 0.24, bounce: 0), value: count)
+    }
+
+    @ViewBuilder private var activity: some View {
+        if case .tool(let name, _) = model.selectedSession?.activity {
+            Image(systemName: ToolInfo.symbol(name))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .contentTransition(.symbolEffect(.replace))
+        } else if case .permission = model.selectedSession?.activity {
+            Image(systemName: "hand.raised.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(nsColor: Theme.amber))
+        } else if case .input = model.selectedSession?.activity {
+            Image(systemName: "questionmark.bubble.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(nsColor: Theme.input))
+        } else {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white.opacity(0.7))
         }
     }
 }

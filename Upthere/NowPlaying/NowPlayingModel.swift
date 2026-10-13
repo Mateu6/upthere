@@ -21,6 +21,7 @@ final class NowPlayingModel {
     @ObservationIgnored private var adapterElected: String?
     @ObservationIgnored private var lingerTask: Task<Void, Never>?
     @ObservationIgnored private var pausedSince: Date?
+    @ObservationIgnored private var vanishTask: Task<Void, Never>?
 
     init(prefs: Preferences) {
         self.prefs = prefs
@@ -53,6 +54,7 @@ final class NowPlayingModel {
         adapter.stop()
         native.stop()
         lingerTask?.cancel()
+        vanishTask?.cancel()
     }
 
     // MARK: Source updates
@@ -109,9 +111,19 @@ final class NowPlayingModel {
 
     // MARK: Arbitration
 
+    #if DEBUG
+    /// Debug: pretend nothing is playing, to see the Claude-only layouts.
+    var debugHidden = false { didSet { recompute() } }
+    /// Debug: show the current track as paused without touching the player.
+    var debugPaused = false { didSet { recompute() } }
+    #endif
+
     private func recompute() {
-        let candidates = players.values.filter { prefs.allowsPlayer($0.bundleID, parent: $0.parentBundleID) }
-        let chosen: PlaybackSnapshot?
+        var candidates = players.values.filter { prefs.allowsPlayer($0.bundleID, parent: $0.parentBundleID) }
+        #if DEBUG
+        if debugHidden { candidates = [] }
+        #endif
+        var chosen: PlaybackSnapshot?
         if let pinned = prefs.pinnedPlayer, let snapshot = candidates.first(where: { $0.bundleID == pinned }),
             snapshot.isPlaying || !candidates.contains(where: \.isPlaying)
         {
@@ -128,6 +140,27 @@ final class NowPlayingModel {
             chosen = candidates.max(by: { $0.timestamp < $1.timestamp })
         }
 
+        // Players can report nothing for a moment (between tracks, while the
+        // adapter restarts): keep showing the last one briefly instead of
+        // dropping the music ear.
+        if chosen == nil, current != nil {
+            guard vanishTask == nil else { return }
+            vanishTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled, let self else { return }
+                self.vanishTask = nil
+                self.current = nil
+                self.artwork = nil
+                self.updateLiveness()
+            }
+            return
+        }
+        vanishTask?.cancel()
+        vanishTask = nil
+
+        #if DEBUG
+        if debugPaused { chosen?.isPlaying = false }
+        #endif
         if current != chosen { current = chosen }
         if let chosen {
             let art = artworkStore.artwork(for: chosen.trackKey)
@@ -221,10 +254,15 @@ final class NowPlayingModel {
         recompute()
     }
 
+    /// Brings the player forward like a Dock click: `NSRunningApplication.activate()`
+    /// is ignored when requested from our never-active panels, and wouldn't
+    /// reopen a closed window.
     func activatePlayerApp() {
         guard let bundleID = current?.parentBundleID ?? current?.bundleID,
-            let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
+            let url = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.bundleURL
         else { return }
-        app.activate()
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration)
     }
 }

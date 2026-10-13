@@ -39,6 +39,9 @@ enum RightContent: Hashable {
     case none
     case musicBars
     case musicCompact
+    /// Collapsed and paused: "Title · Artist" instead of still bars, after
+    /// the cover when the left ear is Claude's.
+    case musicPaused(art: Bool)
     case musicControls(expanded: Bool)
     case musicFull(expanded: Bool)
     case claudeBadge
@@ -83,6 +86,7 @@ final class NotchViewModel {
     @ObservationIgnored private var openTasks: [NotchSide: Task<Void, Never>] = [:]
     @ObservationIgnored private var closeTasks: [NotchSide: Task<Void, Never>] = [:]
     @ObservationIgnored private var outsideClickMonitor: Any?
+    @ObservationIgnored private var pointerMonitor: Any?
     @ObservationIgnored private var scrollAxis: ScrollAxis?
     @ObservationIgnored private var lastScroll = Date.distantPast
     @ObservationIgnored private var seekTask: Task<Void, Never>?
@@ -191,6 +195,16 @@ final class NotchViewModel {
     }
 
     private func content(left l: EarMode, right r: EarMode) -> (left: LeftContent, right: RightContent) {
+        var c = layout(left: l, right: r)
+        // Paused, the bars would just sit still: say what's paused instead.
+        if nowPlaying.current?.isPlaying == false {
+            if c.right == .musicBars { c.right = .musicPaused(art: false) }
+            if c.right == .musicCompact { c.right = .musicPaused(art: true) }
+        }
+        return c
+    }
+
+    private func layout(left l: EarMode, right r: EarMode) -> (left: LeftContent, right: RightContent) {
         // The music ear's mode, counting resting open as peeked.
         let rm: EarMode = r == .collapsed && musicRestsOpen ? .peek : r
         let sessionsLive = prefs.claudeEnabled && claude.isLive
@@ -381,6 +395,14 @@ final class NotchViewModel {
     var musicPieceWidth: CGFloat { 250 }
 
     /// Music at the outer end hugs its title, keeping it close to the controls.
+    /// Hugs "Title · Artist", capped so a long title truncates.
+    private func pausedWidth(art: Bool) -> CGFloat {
+        guard let snapshot = nowPlaying.current else { return unit + 4 }
+        var text = TextWidth.of(snapshot.title, size: 11, weight: .semibold)
+        if !snapshot.artist.isEmpty { text += TextWidth.of(" · \(snapshot.artist)", size: 11, weight: .medium) }
+        return ((art ? unit + 2 : 10) + min(text + 2, 170) + 10).rounded(.up)
+    }
+
     private var musicHugWidth: CGFloat {
         guard let snapshot = nowPlaying.current else { return 250 }
         let text = max(
@@ -423,6 +445,7 @@ final class NotchViewModel {
         case .none: 0
         case .musicBars, .claudeBadge: unit + 4
         case .musicCompact: unit * 2
+        case .musicPaused(let art): pausedWidth(art: art)
         case .musicControls: 300
         case .musicFull(let expanded): geometry.hasNotch ? (expanded ? 340 : 300) : musicHugWidth
         case .claudeTool(let expanded): expanded ? 300 : 190
@@ -506,7 +529,7 @@ final class NotchViewModel {
             return c.left == .musicArt || c.left == .queue
         case .right:
             switch c.right {
-            case .musicBars, .musicCompact, .musicControls, .musicFull, .musicWithTimers: return true
+            case .musicBars, .musicCompact, .musicPaused, .musicControls, .musicFull, .musicWithTimers: return true
             default: return false
             }
         case .center: return false
@@ -610,7 +633,9 @@ final class NotchViewModel {
                     try? await Task.sleep(for: .seconds(delay))
                     guard !Task.isCancelled, let self else { return }
                     self.closeTasks[side] = nil
-                    if self.regionUnderCursor() != side { self.collapse(side) }
+                    // Back over the ear (its enter may have been lost): note
+                    // it, so the next move away closes it again.
+                    if self.regionUnderCursor() != side { self.collapse(side) } else { self.lastHoverRegion = side }
                 }
             }
         }
@@ -692,6 +717,7 @@ final class NotchViewModel {
         case .center: return
         }
         updateOutsideClickMonitor()
+        updatePointerMonitor()
         if side == .left && showsQueue { queue.refresh(for: nowPlaying.current) }
     }
 
@@ -710,6 +736,23 @@ final class NotchViewModel {
         } else if !expanded, let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)
             outsideClickMonitor = nil
+        }
+    }
+
+    /// The panels' hover exit can get lost (a fast flick away, or an ear
+    /// shrinking out from under a still pointer), leaving an ear open. While
+    /// any ear is open, pointer moves elsewhere re-check what's hovered; the
+    /// monitor only exists in that state and sees no events over our panels.
+    private func updatePointerMonitor() {
+        let open = leftMode != .collapsed || rightMode != .collapsed
+        if open, pointerMonitor == nil {
+            pointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.hover(.center, inside: true) }
+            }
+        } else if !open, let monitor = pointerMonitor {
+            NSEvent.removeMonitor(monitor)
+            pointerMonitor = nil
         }
     }
 

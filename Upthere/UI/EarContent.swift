@@ -149,7 +149,7 @@ struct RightEarContent: View {
     private var anchor: Anchor? {
         switch content {
         case .musicBars, .musicControls: .bars
-        case .musicCompact, .musicFull, .musicWithTimers: .art
+        case .musicCompact, .musicPaused(art: true), .musicFull, .musicWithTimers: .art
         default: nil
         }
     }
@@ -199,7 +199,7 @@ struct RightEarContent: View {
             case .art:
                 ArtworkThumb(
                     artwork: music.artwork, size: h - 10, dimmed: music.current?.isPlaying == false,
-                    badge: content == .musicCompact ? nil : music.current.map { $0.parentBundleID ?? $0.bundleID }
+                    badge: content == .musicCompact || content == .musicPaused(art: true) ? nil : music.current.map { $0.parentBundleID ?? $0.bundleID }
                 )
                 .hoverLift(scale: 1.08)
                 .onTapGesture { music.activatePlayerApp() }
@@ -228,6 +228,12 @@ struct RightEarContent: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, h + 2)
+            case .musicPaused(let art):
+                if let snapshot = music.current {
+                    PausedTrackLine(snapshot: snapshot)
+                        .padding(.leading, art ? h + 2 : 10)
+                        .padding(.trailing, 10)
+                }
             case .musicControls:
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
@@ -289,7 +295,7 @@ struct RightEarContent: View {
     /// The seek bar along the ear's bottom edge whenever it shows music.
     @ViewBuilder private func progressLine(tint: NSColor) -> some View {
         switch content {
-        case .musicBars, .musicCompact, .musicControls, .musicFull, .musicWithTimers:
+        case .musicBars, .musicCompact, .musicPaused, .musicControls, .musicFull, .musicWithTimers:
             if let snapshot = model.nowPlaying.current {
                 SeekBar(
                     model: model, snapshot: snapshot, color: tint, interactive: model.isOpen(.right)

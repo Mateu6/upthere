@@ -34,6 +34,10 @@ enum DebugBridge {
                 case "timer-pin-all": for t in model.timers.timers where !t.isPinned { model.timers.togglePin(t.id) }
                 case "claude-off": model.prefs.claudeEnabled = false
                 case "claude-on": model.prefs.claudeEnabled = true
+                case "music-off": model.nowPlaying.debugHidden = true
+                case "music-on": model.nowPlaying.debugHidden = false
+                case "pause-fake": model.nowPlaying.debugPaused = true
+                case "pause-real": model.nowPlaying.debugPaused = false
                 case "seek-active": model.previewSeek((model.nowPlaying.current?.duration ?? 200) * 0.4)
                 case "seek-end": model.endSeek(at: nil, after: .zero)
                 case "theme-aurora": model.prefs.theme = .aurora
