@@ -6,3 +6,4 @@ build/
 .build/
 Config/Local.xcconfig
 *.dmg
+CLAUDE.md
