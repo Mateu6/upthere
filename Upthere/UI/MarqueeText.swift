@@ -42,6 +42,8 @@ struct MarqueeText: View {
     /// offered, so things beside it stay close.
     var hugs = false
     var scrubber: MarqueeScrubber? = nil
+    /// Styled text to show instead of `text` (which still keys the roll).
+    var label: Text? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var textWidth: CGFloat = 0
@@ -65,7 +67,7 @@ struct MarqueeText: View {
     var body: some View {
         let scrubbing = scrubber?.isScrubbing ?? false
         // An invisible copy gives the line its height and flexible width.
-        Text(text)
+        (label ?? Text(text))
             .font(font)
             .lineLimit(1)
             .opacity(0)
@@ -73,7 +75,7 @@ struct MarqueeText: View {
             .overlay {
                 GeometryReader { proxy in
                     let overflow = max(0, textWidth - proxy.size.width)
-                    Text(text)
+                    (label ?? Text(text))
                         .font(font)
                         .foregroundStyle(color)
                         .lineLimit(1)

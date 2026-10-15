@@ -131,7 +131,10 @@ final class NotchViewModel {
             nowPlaying.current?.isPlaying == true
         else { return }
         let side: NotchSide = .right  // the title lives in the right ear
-        guard mode(side) == .collapsed else { return }
+        // Every skip restarts the countdown, even while the ear is still
+        // open from the last one; only the pointer resting on it keeps it.
+        let open = mode(side) == .peek && regionUnderCursor() != side
+        guard mode(side) == .collapsed || open else { return }
         setMode(side, .peek)
         closeTasks.removeValue(forKey: side)?.cancel()
         closeTasks[side] = Task { [weak self] in

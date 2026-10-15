@@ -75,17 +75,17 @@ struct TrackText: View {
     }
 }
 
-/// Collapsed and paused: the track on one line, "Title · Artist".
+/// Collapsed and paused: the track on one line, "Title · Artist", rolling
+/// when it doesn't fit.
 struct PausedTrackLine: View {
     let snapshot: PlaybackSnapshot
 
     var body: some View {
         let artist = snapshot.artist.isEmpty ? Text("") : Text(" · \(snapshot.artist)").foregroundStyle(Theme.secondary)
-        Text("\(Text(snapshot.title).fontWeight(.semibold).foregroundStyle(.white))\(artist)")
-            .font(.system(size: 11, weight: .medium))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        MarqueeText(
+            text: "\(snapshot.title) · \(snapshot.artist)",
+            font: .system(size: 11, weight: .medium),
+            label: Text("\(Text(snapshot.title).fontWeight(.semibold).foregroundStyle(.white))\(artist)"))
     }
 }
 
