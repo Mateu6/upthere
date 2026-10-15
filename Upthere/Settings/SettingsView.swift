@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ServiceManagement
 import SwiftUI
 
@@ -41,6 +42,10 @@ struct SettingsView: View {
     @State private var spotifyError: String?
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var loginItemStatus = SMAppService.mainApp.status
+    @State private var launchError: String?
+    @State private var calendarDenied = false
+    @State private var statusLineError: String?
     @State private var hooksInstalled = HookInstaller.isInstalled
     @State private var hookError: String?
     @State private var statusLineInstalled = HookInstaller.isStatusLineInstalled
@@ -52,10 +57,20 @@ struct SettingsView: View {
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {
                             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+                            launchError = nil
                         } catch {
-                            launchAtLogin = SMAppService.mainApp.status == .enabled
+                            launchError = error.localizedDescription
                         }
+                        refreshLoginItem()
                     }
+                if loginItemStatus == .requiresApproval {
+                    fixRow(
+                        "Allow Upthere in Login Items to start it at login.", button: "Open Login Items…",
+                        color: Theme.amber
+                    ) { SMAppService.openSystemSettingsLoginItems() }
+                } else if let launchError {
+                    errorText(launchError)
+                }
                 themePickers(
                     prefs.separateNotchlessTheme ? "Theme with a notch" : "Theme",
                     theme: $prefs.theme, tint: $prefs.glassTint, fade: $prefs.clearBlackFade)
@@ -109,6 +124,12 @@ struct SettingsView: View {
                 Toggle("Show title and artist when the track changes", isOn: $prefs.announceTracks)
                 Toggle("Live visualizer (bars follow the music)", isOn: $prefs.liveVisualizer)
                     .help("Analyzes the player's audio in real time. macOS asks once for permission to capture app audio.")
+                if prefs.liveVisualizer && VisualizerStatus.shared.failed {
+                    fixRow(
+                        "Upthere can't hear the player, so the bars use a stand-in animation. Allow it under System Audio Recording.",
+                        button: "Open Privacy Settings…", color: Theme.amber
+                    ) { openPrivacy("Privacy_ScreenCapture") }
+                }
                 Toggle("Scroll sideways on the music ear to seek", isOn: $prefs.scrollToSeek)
                 Toggle("Scroll up/down on the music ear for volume", isOn: $prefs.scrollForVolume)
                 Toggle("Use MediaRemote adapter (all players)", isOn: $prefs.useMediaRemoteAdapter)
@@ -136,10 +157,15 @@ struct SettingsView: View {
                         if !calendars.contains(where: { $0.title == "Upthere" }) {
                             Button("Create “Upthere” calendar") { createCalendar() }
                         }
+                    } else if calendarDenied {
+                        fixRow(
+                            "Calendar access is off for Upthere. Turn it on in System Settings, then come back.",
+                            button: "Open Privacy Settings…", color: Theme.amber
+                        ) { openPrivacy("Privacy_Calendars") }
                     } else {
                         Button("Allow Calendar access") { requestCalendar() }
                     }
-                    if let calendarError { Text(calendarError).foregroundStyle(.red).font(.caption) }
+                    if let calendarError { errorText(calendarError) }
                 }
                 Toggle("Keep entries shorter than a minute", isOn: $prefs.timerKeepShort)
                 Toggle("Sound when a countdown ends", isOn: $prefs.timerSound)
@@ -159,19 +185,20 @@ struct SettingsView: View {
                     .disableAutocorrection(true)
                 LabeledContent("Spotify") {
                     if spotifyConnected {
-                        Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.success)
                         Button("Disconnect") {
                             queue.disconnectSpotify()
                             spotifyConnected = false
                         }
+                    } else if spotifyBusy {
+                        Text("Waiting for the browser…").foregroundStyle(.secondary)
+                        Button("Cancel") { queue.cancelSpotifyConnect() }
                     } else {
-                        Button(spotifyBusy ? "Waiting for browser…" : "Connect Spotify") { connectSpotify() }
-                            .disabled(spotifyBusy || prefs.spotifyClientID.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Connect Spotify") { connectSpotify() }
+                            .disabled(prefs.spotifyClientID.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
-                if let spotifyError {
-                    Text(spotifyError).foregroundStyle(.red).font(.caption)
-                }
+                if let spotifyError { errorText(spotifyError) }
             } header: {
                 Text("Up Next")
             } footer: {
@@ -190,15 +217,13 @@ struct SettingsView: View {
                     }
                 LabeledContent("Claude Code hooks") {
                     if hooksInstalled {
-                        Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.success)
                         Button("Disconnect") { runHooks(HookInstaller.uninstall) }
                     } else {
                         Button("Connect Claude Code") { runHooks(HookInstaller.install) }
                     }
                 }
-                if let hookError {
-                    Text(hookError).foregroundStyle(.red).font(.caption)
-                }
+                if let hookError { errorText(hookError) }
             } header: {
                 Text("Agents")
             } footer: {
@@ -230,12 +255,13 @@ struct SettingsView: View {
                 Toggle("Keep showing usage when Claude is idle", isOn: $prefs.showUsageWhenIdle)
                 LabeledContent("Status line (terminal only)") {
                     if statusLineInstalled {
-                        Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.success)
                         Button("Disconnect") { runStatusLine(HookInstaller.uninstallStatusLine) }
                     } else {
                         Button("Connect status line") { runStatusLine(HookInstaller.installStatusLine) }
                     }
                 }
+                if let statusLineError { errorText(statusLineError) }
             } header: {
                 Text("Claude info")
             } footer: {
@@ -259,6 +285,36 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 500, height: 680)
+        // Coming back from System Settings: pick up what was allowed there.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            reloadCalendars()
+            refreshLoginItem()
+        }
+    }
+
+    /// A problem with the way out next to it.
+    private func fixRow(_ message: String, button: String, color: NSColor, action: @escaping () -> Void) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(nsColor: color))
+            Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button(button, action: action).controlSize(.small)
+        }
+    }
+
+    private func errorText(_ message: String) -> some View {
+        Text(message).foregroundStyle(Theme.settingsError).font(.caption)
+    }
+
+    private func openPrivacy(_ anchor: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func refreshLoginItem() {
+        loginItemStatus = SMAppService.mainApp.status
+        launchAtLogin = loginItemStatus == .enabled || loginItemStatus == .requiresApproval
     }
 
     private func usageRow(
@@ -279,6 +335,7 @@ struct SettingsView: View {
 
     private func reloadCalendars() {
         calendarAuthorized = calendar.isAuthorized
+        calendarDenied = calendar.isDenied
         calendars = calendar.calendars().map { ($0.calendarIdentifier, $0.title) }
     }
 
@@ -307,6 +364,8 @@ struct SettingsView: View {
             do {
                 try await queue.connectSpotify(clientID: prefs.spotifyClientID.trimmingCharacters(in: .whitespaces))
                 spotifyConnected = true
+            } catch SpotifyAuth.AuthError.cancelled {
+                spotifyError = nil  // the user cancelled or the browser was left; nothing to explain
             } catch {
                 spotifyError = error.localizedDescription
             }
@@ -335,9 +394,9 @@ struct SettingsView: View {
     private func runStatusLine(_ action: () throws -> Void) {
         do {
             try action()
-            hookError = nil
+            statusLineError = nil
         } catch {
-            hookError = error.localizedDescription
+            statusLineError = error.localizedDescription
         }
         statusLineInstalled = HookInstaller.isStatusLineInstalled
     }

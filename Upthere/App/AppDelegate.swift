@@ -49,6 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    /// Opening Upthere again (Finder, Spotlight, Launchpad) shows Settings,
+    /// so they're reachable even when no ear is on screen to right-click.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSettings()
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         AudioVisualizer.shared.stop()
         nowPlaying.stop()

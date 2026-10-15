@@ -30,6 +30,7 @@ final class SpotifyAuth {
 
     var clientID: String
     private var accessToken: String?
+    private var receiver: LoopbackReceiver?
     private var expiry = Date.distantPast
     /// Read from disk at most once per run.
     private var refreshToken: String?
@@ -100,6 +101,8 @@ final class SpotifyAuth {
             .init(name: "state", value: state),
         ]
         let receiver = LoopbackReceiver(port: Self.port)
+        self.receiver = receiver
+        defer { self.receiver = nil }
         async let callback = receiver.waitForCallback(timeout: 180)
         NSWorkspace.shared.open(url.url!)
         let query = try await callback
@@ -112,6 +115,9 @@ final class SpotifyAuth {
             "client_id": clientID, "code_verifier": verifier,
         ])
     }
+
+    /// Stops waiting for the browser (the user gave up on signing in).
+    func cancelConnect() { receiver?.cancel() }
 
     /// A valid access token, refreshed when needed.
     func token() async throws -> String {
@@ -229,6 +235,10 @@ nonisolated final class LoopbackReceiver: @unchecked Sendable {
         let body = Data(html.utf8)
         let head = "HTTP/1.1 \(status) OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
         return Data(head.utf8) + body
+    }
+
+    func cancel() {
+        queue.async { self.finish(.failure(SpotifyAuth.AuthError.cancelled)) }
     }
 
     private func finish(_ result: Result<[String: String], Error>) {

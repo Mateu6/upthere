@@ -21,10 +21,18 @@ struct NotchGeometry: Equatable {
         return g
     }
 
+    #if DEBUG
+    /// Debug: lay out a notched screen as if it had no notch.
+    nonisolated(unsafe) static var debugNotchless = false
+    private static var notchless: Bool { debugNotchless }
+    #else
+    private static var notchless: Bool { false }
+    #endif
+
     static func make(for screen: NSScreen) -> NotchGeometry {
         let frame = screen.frame
         let top = screen.safeAreaInsets.top
-        if top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
+        if top > 0, !notchless, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
             // The auxiliary areas are the menu bar regions beside the notch.
             let minX = frame.minX + left.width
             let maxX = frame.maxX - right.width

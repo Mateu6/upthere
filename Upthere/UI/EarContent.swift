@@ -57,8 +57,7 @@ struct LeftEarContent: View {
                     artwork: music.artwork, size: h - 10, dimmed: music.current?.isPlaying == false,
                     badge: content == .musicArt ? nil : music.current.map { $0.parentBundleID ?? $0.bundleID }
                 )
-                .hoverLift(scale: 1.08)
-                .onTapGesture { music.activatePlayerApp() }
+                .liftButton(scale: 1.08) { music.activatePlayerApp() }
                 .transition(.blurReplace)
             case .spark:
                 ClaudeGlyph(session: model.selectedSession, size: h * 0.46, ring: model.usageRing)
@@ -201,8 +200,7 @@ struct RightEarContent: View {
                     artwork: music.artwork, size: h - 10, dimmed: music.current?.isPlaying == false,
                     badge: content == .musicCompact || content == .musicPaused(art: true) ? nil : music.current.map { $0.parentBundleID ?? $0.bundleID }
                 )
-                .hoverLift(scale: 1.08)
-                .onTapGesture { music.activatePlayerApp() }
+                .liftButton(scale: 1.08) { music.activatePlayerApp() }
                 .transition(.blurReplace)
             case nil:
                 EmptyView()
@@ -287,7 +285,7 @@ struct RightEarContent: View {
             case .claudeTool(let expanded):
                 if let session = model.selectedSession {
                     ClaudeToolDetail(
-                        session: session, expanded: expanded, chips: model.usageChips(for: session),
+                        session: session, expanded: expanded, chips: model.claudeEarChips(for: session),
                         scrubber: model.rightStatusScrub)
                 }
             }
@@ -332,7 +330,7 @@ struct MusicHUDView: View {
                 .contentTransition(.symbolEffect(.replace))
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.16))
+                    Capsule().fill(Theme.Ink.track)
                     Capsule().fill(Color(nsColor: tint))
                         .frame(width: max(4, proxy.size.width * fraction))
                 }
@@ -340,7 +338,7 @@ struct MusicHUDView: View {
             .frame(height: 4)
             Text(label)
                 .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(Theme.Ink.icon)
                 .fixedSize()
         }
         .padding(.leading, leading)

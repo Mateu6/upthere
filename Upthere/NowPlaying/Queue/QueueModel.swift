@@ -113,6 +113,8 @@ final class QueueModel {
         loadedFor = nil
     }
 
+    func cancelSpotifyConnect() { spotify.cancelConnect() }
+
     func disconnectSpotify() {
         spotify.disconnect()
         loadedFor = nil

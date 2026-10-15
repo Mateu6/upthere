@@ -10,6 +10,7 @@ struct TimerGlyph: View {
     let color: NSColor
     let size: CGFloat
     var alerting = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -26,8 +27,12 @@ struct TimerGlyph: View {
             }
         }
         .frame(width: size, height: size)
-        .scaleEffect(alerting ? 1.12 : 1)
-        .animation(alerting ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .smooth(duration: 0.3), value: alerting)
+        // Time's up: a pulse, as a fade under Reduce Motion.
+        .scaleEffect(alerting && !reduceMotion ? 1.12 : 1)
+        .opacity(alerting && reduceMotion ? 0.45 : 1)
+        .animation(
+            alerting ? .easeInOut(duration: reduceMotion ? 0.8 : 0.5).repeatForever(autoreverses: true) : .smooth(duration: 0.3),
+            value: alerting)
     }
 }
 
@@ -53,7 +58,7 @@ final class TimerRingNSView: NSView {
             layer.lineCap = .round
             self.layer?.addSublayer(layer)
         }
-        track.strokeColor = NSColor.white.withAlphaComponent(0.16).cgColor
+        track.strokeColor = NSColor.white.withAlphaComponent(Theme.Ink.trackOpacity).cgColor
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -164,7 +169,7 @@ struct TimerStrip: View {
                         Button(action: model.openTimerInput) {
                             Image(systemName: "plus")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.white.opacity(0.8))
+                                .foregroundStyle(Theme.Ink.icon)
                                 .frame(width: 24, height: 24)
                                 .contentShape(Rectangle())
                         }
@@ -249,7 +254,7 @@ struct TimerChip: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(Theme.Ink.icon)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }
@@ -332,7 +337,6 @@ struct ClaudeChip: View {
         .padding(.vertical, 2)
         .padding(.horizontal, 4)
         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color(nsColor: Theme.claude).opacity(0.08)))
-        .hoverLift(scale: 1.02)
-        .onTapGesture { model.claude.focus(session) }
+        .liftButton(scale: 1.02) { model.claude.focus(session) }
     }
 }

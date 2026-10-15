@@ -124,7 +124,7 @@ enum UsageInfo {
 
     static func color(for level: Double?) -> Color {
         guard let level else { return Theme.secondary }
-        if level >= 0.9 { return Color(nsColor: NSColor(srgbRed: 1, green: 0.42, blue: 0.38, alpha: 1)) }
+        if level >= 0.9 { return Theme.danger }
         if level >= 0.75 { return Color(nsColor: Theme.amber) }
         return Theme.secondary
     }
@@ -156,7 +156,7 @@ struct UsageRingView: View {
 
     var body: some View {
         ZStack {
-            Circle().stroke(.white.opacity(0.14), lineWidth: 1.6)
+            Circle().stroke(Theme.Ink.track, lineWidth: 1.6)
             Circle()
                 .trim(from: 0, to: min(1, max(0.02, value)))
                 .stroke(UsageInfo.color(for: value).opacity(value < 0.75 ? 0 : 1), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))

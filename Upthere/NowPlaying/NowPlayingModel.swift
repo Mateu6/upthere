@@ -116,6 +116,9 @@ final class NowPlayingModel {
     var debugHidden = false { didSet { recompute() } }
     /// Debug: show the current track as paused without touching the player.
     var debugPaused = false { didSet { recompute() } }
+    /// Debug: paused for longer than the linger time, so the track is still
+    /// known but no longer live.
+    var debugStale = false { didSet { recompute() } }
     #endif
 
     private func recompute() {
@@ -159,7 +162,7 @@ final class NowPlayingModel {
         vanishTask = nil
 
         #if DEBUG
-        if debugPaused { chosen?.isPlaying = false }
+        if debugPaused || debugStale { chosen?.isPlaying = false }
         #endif
         if current != chosen { current = chosen }
         if let chosen {
@@ -183,6 +186,12 @@ final class NowPlayingModel {
             isLive = false
             return
         }
+        #if DEBUG
+        if debugStale {
+            if isLive { isLive = false }
+            return
+        }
+        #endif
         if current.isPlaying {
             pausedSince = nil
             if !isLive { isLive = true }

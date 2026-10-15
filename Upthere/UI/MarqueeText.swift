@@ -43,6 +43,7 @@ struct MarqueeText: View {
     var hugs = false
     var scrubber: MarqueeScrubber? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var textWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
     /// The running roll, so its on-screen position can be worked out when
@@ -87,7 +88,7 @@ struct MarqueeText: View {
                         .offset(x: -offset)
                         .frame(width: proxy.size.width, alignment: overflow > 0 ? .leading : alignment)
                         .mask(edgeFade(overflowing: overflow > 0))
-                        .task(id: "\(text)|\(Int(overflow))|\(scrubbing)") {
+                        .task(id: "\(text)|\(Int(overflow))|\(scrubbing)|\(reduceMotion)") {
                             guard !scrubbing else { return }
                             await roll(overflow)
                         }
@@ -153,6 +154,9 @@ struct MarqueeText: View {
             if offset != 0 { move(to: 0, duration: 0.3, eased: true) }
             return
         }
+        // Reduce Motion: no rolling on its own; the line still fades at the
+        // edge and can be scrolled sideways.
+        if reduceMotion { return }
         let travel = overflow + Self.fade
         var resuming = presentedOffset() > 0.5
         while !Task.isCancelled {

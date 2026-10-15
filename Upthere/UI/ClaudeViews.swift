@@ -23,7 +23,7 @@ struct ClaudeGlyph: View {
             case .done:
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: size * 0.95, weight: .semibold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.success)
                     .transition(.scale.combined(with: .opacity))
             case .permission:
                 ClaudeSparkView(style: .waiting, color: Theme.amber)
@@ -69,7 +69,7 @@ struct ClaudeDetail: View {
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(.black)
                             .padding(.horizontal, 4)
-                            .background(Capsule().fill(.white.opacity(0.7)))
+                            .background(Capsule().fill(Theme.Ink.badge))
                     }
                     MarqueeText(
                         text: session.projectName, font: .system(size: 12, weight: .semibold), alignment: .trailing,
@@ -111,7 +111,7 @@ struct ClaudeDetail: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(Theme.Ink.icon)
                 .frame(width: 20, height: 22)
                 .contentShape(Rectangle())
         }
@@ -148,6 +148,17 @@ struct ClaudePiece: View {
     var body: some View {
         let count = model.claude.visibleSessions.count
         let hovering = model.claudePieceHovered
+        Button { model.claude.focus(session) } label: {
+            label(count: count, hovering: hovering)
+        }
+        .buttonStyle(PieceButtonStyle(hovering: hovering))
+        .onHover { model.claudePieceHovered = $0 }
+        .onDisappear { model.claudePieceHovered = false }
+        .animation(.smooth(duration: 0.22), value: hovering)
+        .help(session.hostSessionID != nil ? "Open this chat in Claude" : "Show terminal")
+    }
+
+    private func label(count: Int, hovering: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 0) {
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
@@ -156,7 +167,7 @@ struct ClaudePiece: View {
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 4)
-                        .background(Capsule().fill(.white.opacity(0.7)))
+                        .background(Capsule().fill(Theme.Ink.badge))
                 }
                 MarqueeText(
                     text: session.projectName, font: .system(size: 12, weight: .semibold), alignment: .trailing, hugs: true)
@@ -195,27 +206,37 @@ struct ClaudePiece: View {
         .padding(.leading, 10)
         .padding(.trailing, 2)
         .contentShape(Rectangle())
-        .background {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.white.opacity(hovering ? 0.07 : 0))
-                .padding(.vertical, 3)
-        }
-        .onHover { model.claudePieceHovered = $0 }
-        .onDisappear { model.claudePieceHovered = false }
-        .animation(.smooth(duration: 0.22), value: hovering)
-        .onTapGesture { model.claude.focus(session) }
-        .help(session.hostSessionID != nil ? "Open this chat in Claude" : "Show terminal")
+    }
+}
+
+/// Claude's piece: a faint wash under the pointer, a deeper one and a
+/// slight sink while pressed. Hover comes from the model, which also
+/// widens the piece.
+private struct PieceButtonStyle: ButtonStyle {
+    let hovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        configuration.label
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(pressed ? Theme.Ink.hover : hovering ? Theme.Ink.faint : .clear)
+                    .padding(.vertical, 3)
+            }
+            .scaleEffect(pressed ? 0.98 : 1)
+            .animation(pressed ? .spring(duration: 0.12, bounce: 0) : .spring(duration: 0.3, bounce: 0.2), value: pressed)
     }
 }
 
 /// A hairline between pieces sharing an ear.
 struct PieceDivider: View {
     var body: some View {
-        Capsule().fill(.white.opacity(0.14)).frame(width: 1).padding(.vertical, 9)
+        Capsule().fill(Theme.Ink.track).frame(width: 1).padding(.vertical, 9)
     }
 }
 
-/// Right ear for Claude-only: the current tool and how long it's been going.
+/// Right ear for Claude-only: what's happening now, then time, model and
+/// tokens (plus the usage figures picked in Settings).
 struct ClaudeToolDetail: View {
     let session: ClaudeSession
     let expanded: Bool
@@ -230,7 +251,11 @@ struct ClaudeToolDetail: View {
                     .foregroundStyle(Color(nsColor: Theme.claude))
             }
             VStack(alignment: .leading, spacing: 0) {
-                MarqueeText(text: primaryLine, font: .system(size: 11.5, weight: .medium), scrubber: scrubber)
+                MarqueeText(
+                    text: Self.primaryLine(session), font: .system(size: 11.5, weight: .medium),
+                    color: lineColor, scrubber: scrubber)
+                    .id(session.id)
+                    .transition(.blurReplace)
                 HStack(spacing: 4) {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
@@ -240,7 +265,7 @@ struct ClaudeToolDetail: View {
                     .foregroundStyle(Theme.secondary)
                     if !chips.isEmpty {
                         Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
-                        UsageChipsView(chips: chips)
+                        UsageChipsView(chips: chips).fixedSize()
                     }
                 }
             }
@@ -251,13 +276,23 @@ struct ClaudeToolDetail: View {
         .padding(.trailing, 12)
     }
 
-    private var primaryLine: String {
+    private var lineColor: Color {
         switch session.activity {
-        case .tool(_, let detail?): return detail
-        case .permission(let tool, let detail): return detail ?? tool.map { "Allow \(ToolInfo.displayName($0))?" } ?? "Needs permission"
+        case .permission, .input: session.statusColor
+        default: .white
+        }
+    }
+
+    /// What's happening right now: the step in progress, the question
+    /// asked, or (once finished) Claude's last words.
+    static func primaryLine(_ session: ClaudeSession) -> String {
+        switch session.activity {
+        case .tool, .thinking, .compacting: return session.statusLine
+        case .permission(let tool, let detail):
+            return detail.map { "\(session.statusText) · \($0)" } ?? tool.map { "Allow \(ToolInfo.displayName($0))?" } ?? "Needs permission"
         case .input(let prompt): return prompt ?? "Claude is asking you something"
         case .done: return session.transcript.lastText ?? "Finished"
-        default: return session.transcript.lastText ?? session.statusText
+        case .idle: return session.transcript.lastText ?? session.statusText
         }
     }
 }
@@ -291,12 +326,12 @@ struct ClaudeBadge: View {
     private var activity: some View {
         let (symbol, color): (String, Color) =
             switch model.selectedSession?.activity {
-            case .tool(let name, _): (ToolInfo.symbol(name), .white.opacity(0.85))
+            case .tool(let name, _): (ToolInfo.symbol(name), Theme.Ink.icon)
             case .permission: ("hand.raised.fill", Color(nsColor: Theme.amber))
             case .input: ("questionmark.bubble.fill", Color(nsColor: Theme.input))
-            case .thinking: ("brain", .white.opacity(0.85))
-            case .compacting: ("arrow.down.right.and.arrow.up.left", .white.opacity(0.85))
-            case .done: ("text.bubble.fill", .white.opacity(0.75))
+            case .thinking: ("brain", Theme.Ink.icon)
+            case .compacting: ("arrow.down.right.and.arrow.up.left", Theme.Ink.icon)
+            case .done: ("text.bubble.fill", Theme.Ink.icon)
             case .idle, nil: ("moon.zzz.fill", Theme.secondary)
             }
         return Image(systemName: symbol)

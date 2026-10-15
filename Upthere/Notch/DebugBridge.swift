@@ -40,6 +40,12 @@ enum DebugBridge {
                 case "music-on": model.nowPlaying.debugHidden = false
                 case "pause-fake": model.nowPlaying.debugPaused = true
                 case "pause-real": model.nowPlaying.debugPaused = false
+                // Paused past the linger time: the track is known but not live.
+                case "pause-stale": model.nowPlaying.debugStale = true
+                case "pause-fresh": model.nowPlaying.debugStale = false
+                case "notchless-on", "notchless-off":
+                    NotchGeometry.debugNotchless = mode == "notchless-on"
+                    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
                 case "seek-active": model.previewSeek((model.nowPlaying.current?.duration ?? 200) * 0.4)
                 case "seek-end": model.endSeek(at: nil, after: .zero)
                 case "theme-aurora": model.prefs.theme = .aurora

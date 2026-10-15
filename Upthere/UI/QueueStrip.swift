@@ -12,8 +12,7 @@ struct QueueStrip: View {
             switch queue.status {
             case .needsSpotifyLogin:
                 hint("Connect Spotify in Settings to see Up Next", systemImage: "link")
-                    .hoverLift(scale: 1.02)
-                    .onTapGesture { model.openSettings() }
+                    .liftButton(scale: 1.02) { model.openSettings() }
             case .error(let message):
                 hint(message, systemImage: "exclamationmark.triangle")
             case .unsupported:
@@ -99,8 +98,8 @@ struct RemoteThumb: View {
             if let image {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fill).transition(.opacity)
             } else {
-                Color.white.opacity(0.1)
-                Image(systemName: "music.note").font(.system(size: size * 0.45)).foregroundStyle(.white.opacity(0.5))
+                Theme.Ink.placeholder
+                Image(systemName: "music.note").font(.system(size: size * 0.45)).foregroundStyle(Theme.Ink.glyph)
             }
         }
         .frame(width: size, height: size)

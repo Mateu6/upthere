@@ -16,10 +16,10 @@ struct ArtworkThumb: View {
                     .aspectRatio(contentMode: .fill)
             } else {
                 ZStack {
-                    Color.white.opacity(0.12)
+                    Theme.Ink.placeholder
                     Image(systemName: "music.note")
                         .font(.system(size: size * 0.45, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(Theme.Ink.glyph)
                 }
             }
         }
@@ -160,7 +160,7 @@ private struct TransportButtonStyle: ButtonStyle {
             .scaleEffect(pressed ? 0.82 : hovering ? 1.08 : 1)
             .background {
                 Circle()
-                    .fill(.white.opacity(pressed ? 0.24 : hovering ? 0.14 : 0))
+                    .fill(pressed ? Theme.Ink.pressed : hovering ? Theme.Ink.hover : .clear)
                     .scaleEffect(pressed ? 0.92 : hovering ? 1 : 0.6)
             }
             .animation(pressed ? .spring(duration: 0.12, bounce: 0) : .spring(duration: 0.3, bounce: 0.2), value: pressed)
@@ -185,7 +185,7 @@ struct HoverButtonStyle: ButtonStyle {
                 .scaleEffect(pressed ? 0.86 : hovering ? 1.06 : 1)
                 .background {
                     Circle()
-                        .fill(.white.opacity(pressed ? 0.22 : hovering ? 0.14 : 0))
+                        .fill(pressed ? Theme.Ink.pressed : hovering ? Theme.Ink.hover : .clear)
                         .scaleEffect(pressed ? 0.92 : hovering ? 1 : 0.6)
                 }
                 .onHover { hovering = $0 }
@@ -219,7 +219,7 @@ struct RowButtonStyle: ButtonStyle {
             configuration.label
                 .background {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(tint.opacity(pressed ? 0.16 : hovering || highlighted ? 0.1 : 0))
+                        .fill(tint.opacity(pressed ? Theme.Ink.pressedOpacity : hovering || highlighted ? Theme.Ink.hoverOpacity : 0))
                 }
                 .scaleEffect(pressed ? 0.97 : 1)
                 .onHover { hovering = $0 }
@@ -246,7 +246,7 @@ struct SeekBar: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 if let preview, let duration = snapshot.duration, duration > 0 {
-                    Capsule().fill(.white.opacity(0.18))
+                    Capsule().fill(Theme.Ink.track)
                     Capsule().fill(Color(nsColor: color))
                         .frame(width: max(4, proxy.size.width * min(1, preview / duration)))
                 } else {
@@ -289,21 +289,36 @@ struct ElapsedLabel: View {
     }
 }
 
-/// Hover feedback for things clicked without a Button (the cover opens the
-/// player, Claude's chip opens the chat): a slight lift and brightening.
-struct HoverLift: ViewModifier {
+/// Things clicked that don't look like buttons (the cover opens the
+/// player, Claude's chip opens the chat): a slight lift and brightening
+/// under the pointer, a sink while pressed.
+struct LiftButtonStyle: ButtonStyle {
     var scale: CGFloat = 1.05
-    @State private var hovering = false
 
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(hovering ? scale : 1)
-            .brightness(hovering ? 0.08 : 0)
-            .onHover { hovering = $0 }
-            .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+    func makeBody(configuration: Configuration) -> some View {
+        LiftBody(configuration: configuration, scale: scale)
+    }
+
+    private struct LiftBody: View {
+        let configuration: ButtonStyleConfiguration
+        let scale: CGFloat
+        @State private var hovering = false
+
+        var body: some View {
+            let pressed = configuration.isPressed
+            configuration.label
+                .scaleEffect(pressed ? 0.95 : hovering ? scale : 1)
+                .brightness(pressed ? -0.06 : hovering ? 0.08 : 0)
+                .onHover { hovering = $0 }
+                .animation(pressed ? .spring(duration: 0.12, bounce: 0) : .spring(duration: 0.3, bounce: 0.2), value: pressed)
+                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+        }
     }
 }
 
 extension View {
-    func hoverLift(scale: CGFloat = 1.05) -> some View { modifier(HoverLift(scale: scale)) }
+    /// Makes this view a button with `LiftButtonStyle`.
+    func liftButton(scale: CGFloat = 1.05, action: @escaping () -> Void) -> some View {
+        Button(action: action) { self }.buttonStyle(LiftButtonStyle(scale: scale))
+    }
 }

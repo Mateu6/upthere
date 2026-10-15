@@ -11,6 +11,15 @@ final class CalendarLogger {
 
     var isAuthorized: Bool { EKEventStore.authorizationStatus(for: .event) == .fullAccess }
 
+    /// Asked before and refused: macOS won't ask again, so only System
+    /// Settings can turn it on.
+    var isDenied: Bool {
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .denied, .restricted, .writeOnly: true
+        default: false
+        }
+    }
+
     func requestAccess() async -> Bool {
         (try? await store.requestFullAccessToEvents()) ?? false
     }
@@ -27,7 +36,7 @@ final class CalendarLogger {
         if let existing = calendars().first(where: { $0.title == "Upthere" }) { return existing }
         let calendar = EKCalendar(for: .event, eventStore: store)
         calendar.title = "Upthere"
-        calendar.cgColor = NSColor(srgbRed: 0.35, green: 0.78, blue: 1.0, alpha: 1).cgColor
+        calendar.cgColor = TimerModel.palette[0].cgColor
         calendar.source =
             store.defaultCalendarForNewEvents?.source
             ?? store.sources.first { $0.sourceType == .calDAV || $0.sourceType == .local }

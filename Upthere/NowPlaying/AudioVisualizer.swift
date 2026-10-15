@@ -72,14 +72,19 @@ final class AudioVisualizer {
             try start(bundleID: bundleID)
             runningBundleID = bundleID
             failedBundleID = nil
+            VisualizerStatus.shared.failed = false
         } catch {
             visualizerLog.error("audio tap failed: \(error.localizedDescription, privacy: .public)")
             failedBundleID = bundleID
+            VisualizerStatus.shared.failed = true
             stop()
         }
     }
 
-    func resetFailures() { failedBundleID = nil }
+    func resetFailures() {
+        failedBundleID = nil
+        VisualizerStatus.shared.failed = false
+    }
 
     func stop() {
         if let runningBundleID { visualizerLog.info("stopped tapping \(runningBundleID, privacy: .public)") }
@@ -276,4 +281,12 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
         }
         store.write(levels)
     }
+}
+
+/// Whether the audio tap last failed (usually: permission refused), so
+/// Settings can point to where it's turned on.
+@Observable
+final class VisualizerStatus {
+    static let shared = VisualizerStatus()
+    var failed = false
 }

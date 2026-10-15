@@ -216,8 +216,10 @@ final class NotchViewModel {
         let usageOnly = !sessionsLive && prefs.claudeEnabled && prefs.showUsageWhenIdle
             && claude.planUsage.map { $0.current().fiveHour != nil || $0.current().sevenDay != nil } == true
         let agents = sessionsLive || usageOnly
-        // An open music ear keeps showing a paused/pinned player.
-        let musicEarOpen = agents ? r != .collapsed : (l != .collapsed || r != .collapsed)
+        // An open music ear keeps showing a paused/pinned player, but only
+        // while music owns the ears: when Claude does, hovering its ear shows
+        // Claude, never a player that has gone quiet.
+        let musicEarOpen = !agents && (l != .collapsed || r != .collapsed)
         let music = nowPlaying.isLive || (musicEarOpen && nowPlaying.current != nil)
 
         let claudeLeft: LeftContent = l == .collapsed ? .claudeGlyph : .claudeDetail(expanded: l == .expanded)
@@ -227,7 +229,7 @@ final class NotchViewModel {
         // center piece [Claude ‖ music | timers]. Only the outer piece of an
         // ear opens on hover, so the pieces next to the notch never move.
         if !geometry.hasNotch, sessionsLive {
-            let musicNow = nowPlaying.isLive || (r != .collapsed && nowPlaying.current != nil)
+            let musicNow = nowPlaying.isLive
             // Claude needing you shows in its piece rather than opening the ear.
             let lo: EarMode = l == .collapsed ? .collapsed : leftMode
             if musicNow && !timers.isEmpty && prefs.centerPiece == .music {
@@ -250,7 +252,7 @@ final class NotchViewModel {
             let left: LeftContent =
                 claude.attention != nil && prefs.claudeEnabled
                 ? .claudeDetail(expanded: false) : l == .collapsed ? .timer : .timerStrip
-            let musicNow = nowPlaying.isLive || (r != .collapsed && nowPlaying.current != nil)
+            let musicNow = nowPlaying.isLive || (!sessionsLive && r != .collapsed && nowPlaying.current != nil)
             let right: RightContent
             switch (musicNow, sessionsLive) {
             case (true, false): right = rm == .collapsed ? .musicBars : .musicControls(expanded: rm == .expanded)
@@ -452,7 +454,7 @@ final class NotchViewModel {
         case .musicPaused(let art): pausedWidth(art: art)
         case .musicControls: 300
         case .musicFull(let expanded): geometry.hasNotch ? (expanded ? 340 : 300) : musicHugWidth
-        case .claudeTool(let expanded): expanded ? 300 : 190
+        case .claudeTool(let expanded): claudeToolWidth(expanded: expanded)
         case .musicWithTimers(let strip): musicPieceWidth + width(strip ? TimerPart.strip : .collapsed)
         }
     }
@@ -542,19 +544,10 @@ final class NotchViewModel {
 
     // MARK: Colors
 
-    static let claudePalette = [
-        Theme.claude, NSColor(srgbRed: 0.96, green: 0.42, blue: 0.52, alpha: 1),
-        NSColor(srgbRed: 1.0, green: 0.66, blue: 0.32, alpha: 1),
-    ]
-    static let attentionPalette = [
-        Theme.amber, NSColor(srgbRed: 1.0, green: 0.55, blue: 0.2, alpha: 1),
-        NSColor(srgbRed: 1.0, green: 0.86, blue: 0.4, alpha: 1),
-    ]
-    static let inputPalette = [
-        Theme.input, NSColor(srgbRed: 0.55, green: 0.5, blue: 1.0, alpha: 1),
-        NSColor(srgbRed: 0.4, green: 0.82, blue: 1.0, alpha: 1),
-    ]
-    static let neutralPalette = [NSColor(white: 0.9, alpha: 1), NSColor(white: 0.75, alpha: 1), NSColor(white: 0.6, alpha: 1)]
+    static let claudePalette = [Theme.claude] + Theme.gradient(from: Theme.claudeTone).dropFirst()
+    static let attentionPalette = Theme.gradient(from: Theme.permissionTone)
+    static let inputPalette = Theme.gradient(from: Theme.inputTone)
+    static let neutralPalette = [0.93, 0.8, 0.67].map { OKLCH($0, 0, 0).nsColor }
 
     var musicPalette: [NSColor] { nowPlaying.artwork?.palette ?? Self.neutralPalette }
 
@@ -588,6 +581,36 @@ final class NotchViewModel {
 
     func usageChips(for session: ClaudeSession?) -> [UsageChip] {
         UsageInfo.chips(for: session, plan: claude.planUsage, weeklyTokens: claude.weeklyTokens, prefs: prefs)
+    }
+
+    /// The right ear when Claude has it: the model and the session's tokens
+    /// always lead, then the usage figures picked in Settings.
+    func claudeEarChips(for session: ClaudeSession) -> [UsageChip] {
+        var chips = usageChips(for: session)
+        var lead: [UsageChip] = []
+        if !chips.contains(where: { $0.id == "model" }),
+            let model = session.status?.modelName ?? session.transcript.model.map(UsageInfo.shortModel)
+        {
+            lead.append(UsageChip(id: "model", text: model))
+        }
+        let tokens = session.transcript.sessionTokens
+        if tokens > 0, !chips.contains(where: { $0.text.hasSuffix(" tok") }) {
+            lead.append(UsageChip(id: "tokens", text: "\(TokenFormat.short(tokens)) tok"))
+        }
+        chips.insert(contentsOf: lead, at: 0)
+        return chips
+    }
+
+    /// The Claude right ear hugs its two lines: what's happening now, and
+    /// time · model · tokens beneath it.
+    private func claudeToolWidth(expanded: Bool) -> CGFloat {
+        guard let session = selectedSession else { return 190 }
+        let line = TextWidth.of(ClaudeToolDetail.primaryLine(session), size: 11.5, weight: .medium)
+        let chips = claudeEarChips(for: session)
+        let figures = 34 + chips.reduce(0) { $0 + TextWidth.of($1.text, size: 10, weight: .medium) + 12 }
+        let icon: CGFloat = if case .tool = session.activity { 18 } else { 0 }
+        let cap: CGFloat = expanded ? 420 : 340
+        return min(8 + icon + max(min(line + 10, cap - 60), figures, 120) + 12, cap).rounded(.up)
     }
 
     var usageRing: Double? {

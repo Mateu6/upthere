@@ -236,7 +236,7 @@ private struct PanelIconButtonStyle: ButtonStyle {
             content
                 .background {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(.primary.opacity(pressed ? 0.16 : hovering ? 0.1 : 0))
+                        .fill(.primary.opacity(pressed ? Theme.Ink.pressedOpacity : hovering ? Theme.Ink.hoverOpacity : 0))
                 }
                 .scaleEffect(pressed ? 0.94 : 1)
                 .contentShape(Rectangle())

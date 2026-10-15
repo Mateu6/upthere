@@ -10,6 +10,20 @@ import SwiftUI
 // same at 60 Hz (or 30 for the slow progress line) and leave the GPU idle
 // more often. Open/close springs run at the native rate (see EarWindow).
 
+/// The system's Reduce Motion setting, for the Core Animation views (SwiftUI
+/// views read `accessibilityReduceMotion`). Loops lose their movement and
+/// keep their meaning: a spinner becomes a slow fade, bars stand still.
+enum Motion {
+    static var reduced: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    /// Sends `selector` to `observer` whenever the setting changes (removed
+    /// automatically when the observer goes away).
+    static func observe(_ observer: NSObject, _ selector: Selector) {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            observer, selector: selector, name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    }
+}
+
 extension CAAnimation {
     static let ambientFrameRate = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     static let slowFrameRate = CAFrameRateRange(minimum: 8, maximum: 30, preferred: 30)
@@ -39,6 +53,9 @@ final class AudioBarsNSView: NSView {
     private static let durations: [CFTimeInterval] = [0.42, 0.57, 0.36, 0.5]
     private static let phases: [CFTimeInterval] = [0, 0.21, 0.09, 0.33]
     private static let rest: CGFloat = 0.28
+    /// Reduce Motion: playing bars stand still at uneven heights.
+    private static let still: [CGFloat] = [0.55, 0.9, 0.45, 0.72]
+    private var reduced = Motion.reduced
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -49,6 +66,13 @@ final class AudioBarsNSView: NSView {
             bar.transform = CATransform3DMakeScale(1, Self.rest, 1)
             layer?.addSublayer(bar)
         }
+        Motion.observe(self, #selector(motionChanged))
+    }
+
+    @objc private func motionChanged() {
+        reduced = Motion.reduced
+        bouncing = false
+        updateDriver()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -90,7 +114,13 @@ final class AudioBarsNSView: NSView {
     /// server animation, or rest when paused.
     private func updateDriver() {
         // Audio is captured only while live bars are actually on screen.
-        VisualizerViewers.shared.set(self, watching: live && window != nil)
+        VisualizerViewers.shared.set(self, watching: live && window != nil && !reduced)
+        if reduced {
+            link?.invalidate()
+            link = nil
+            if playing { standStill() } else { rest() }
+            return
+        }
         if playing && live && window != nil {
             if link == nil {
                 let link = displayLink(target: self, selector: #selector(tick(_:)))
@@ -126,6 +156,20 @@ final class AudioBarsNSView: NSView {
         CATransaction.setDisableActions(true)
         for (i, bar) in bars.enumerated() {
             bar.transform = CATransform3DMakeScale(1, Self.rest + (1 - Self.rest) * CGFloat(shown[i]), 1)
+        }
+        CATransaction.commit()
+    }
+
+    /// Reduce Motion while playing: uneven bars that don't move, so playing
+    /// still looks different from paused.
+    private func standStill() {
+        bouncing = false
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, bar) in bars.enumerated() {
+            bar.removeAnimation(forKey: "bounce")
+            bar.removeAnimation(forKey: "settle")
+            bar.transform = CATransform3DMakeScale(1, Self.still[index], 1)
         }
         CATransaction.commit()
     }
@@ -197,7 +241,7 @@ final class ProgressLineNSView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        track.backgroundColor = NSColor.white.withAlphaComponent(0.16).cgColor
+        track.backgroundColor = NSColor.white.withAlphaComponent(Theme.Ink.trackOpacity).cgColor
         fill.anchorPoint = CGPoint(x: 0, y: 0.5)
         layer?.addSublayer(track)
         layer?.addSublayer(fill)
@@ -270,6 +314,7 @@ final class ClaudeSparkNSView: NSView {
     private let shape = CAShapeLayer()
     private var style: ClaudeSparkView.Style?
     private var lastSize: CGSize = .zero
+    private var color: NSColor = .white
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -277,6 +322,13 @@ final class ClaudeSparkNSView: NSView {
         shape.fillColor = nil
         shape.lineCap = .round
         layer?.addSublayer(shape)
+        Motion.observe(self, #selector(motionChanged))
+    }
+
+    @objc private func motionChanged() {
+        guard let style else { return }
+        self.style = nil
+        update(style: style, color: color)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -305,6 +357,7 @@ final class ClaudeSparkNSView: NSView {
     }
 
     func update(style: ClaudeSparkView.Style, color: NSColor) {
+        self.color = color
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         shape.strokeColor = color.cgColor
@@ -314,6 +367,17 @@ final class ClaudeSparkNSView: NSView {
         shape.removeAllAnimations()
         shape.opacity = 1
         switch style {
+        case .working where Motion.reduced:
+            // No spin: a slow fade still says "busy".
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1
+            fade.toValue = 0.5
+            fade.duration = 1.2
+            fade.autoreverses = true
+            fade.repeatCount = .infinity
+            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            fade.preferredFrameRateRange = CAAnimation.ambientFrameRate
+            shape.add(fade, forKey: "fade")
         case .working:
             let spin = CABasicAnimation(keyPath: "transform.rotation.z")
             spin.fromValue = 0

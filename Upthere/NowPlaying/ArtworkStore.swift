@@ -115,14 +115,19 @@ final class ArtworkStore {
         return picked
     }
 
+    /// Lifted in OKLCH to an even lightness and enough chroma to read on
+    /// black, whatever the hue (HSV "brightness" would make yellows glare
+    /// and blues sink).
     nonisolated private static func vivid(hue: CGFloat, saturation: CGFloat, brightness: CGFloat) -> NSColor {
-        NSColor(hue: hue, saturation: min(1, max(0.5, saturation * 1.15)), brightness: max(0.85, brightness), alpha: 1)
+        let picked = NSColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
+        guard let tone = OKLCH(picked) else { return picked }
+        return tone.with(l: max(0.78, tone.l), c: max(0.1, tone.c * 1.15)).nsColor
     }
 
+    /// The next colour along the hue wheel, at the same lightness and chroma.
     nonisolated private static func shifted(_ color: NSColor, by amount: CGFloat) -> NSColor {
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        color.usingColorSpace(.sRGB)?.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        return NSColor(hue: (h + amount).truncatingRemainder(dividingBy: 1), saturation: s, brightness: b, alpha: 1)
+        guard let tone = OKLCH(color) else { return color }
+        return tone.rotated(by: Double(amount) * 360).nsColor
     }
 
     nonisolated static func derived(from color: NSColor, count: Int) -> [NSColor] {
@@ -142,8 +147,7 @@ final class ArtworkStore {
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         let color = NSColor(
             srgbRed: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255, blue: CGFloat(pixel[2]) / 255, alpha: 1)
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        color.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        return NSColor(hue: h, saturation: min(1, s * 1.3), brightness: max(0.75, b), alpha: 1)
+        guard let tone = OKLCH(color) else { return .white }
+        return tone.with(l: max(0.74, tone.l), c: tone.c * 1.3).nsColor
     }
 }

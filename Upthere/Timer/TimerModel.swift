@@ -59,14 +59,7 @@ nonisolated struct TimerEntry: Equatable, Sendable {
 @Observable
 final class TimerModel {
     static let maxTimers = 6
-    static let palette: [NSColor] = [
-        NSColor(srgbRed: 0.35, green: 0.78, blue: 1.0, alpha: 1),
-        NSColor(srgbRed: 1.0, green: 0.62, blue: 0.3, alpha: 1),
-        NSColor(srgbRed: 0.55, green: 0.9, blue: 0.5, alpha: 1),
-        NSColor(srgbRed: 0.95, green: 0.45, blue: 0.75, alpha: 1),
-        NSColor(srgbRed: 0.75, green: 0.6, blue: 1.0, alpha: 1),
-        NSColor(srgbRed: 1.0, green: 0.85, blue: 0.35, alpha: 1),
-    ]
+    static let palette: [NSColor] = Theme.timerTones.map(\.nsColor)
 
     private(set) var timers: [TrackedTimer] = []
     private(set) var recentLabels: [String] = []

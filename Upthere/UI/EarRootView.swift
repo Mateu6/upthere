@@ -5,10 +5,11 @@ enum Theme {
     /// The ear open/close spring (perceptual duration; critically damped, no
     /// overshoot), run by EarWindow on the mask.
     static let earDuration: Double = 0.34
+    /// Claude's brand colour, kept at its exact sRGB value. Other colours
+    /// are OKLCH tokens in `Palette.swift`.
     static let claude = NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1)
-    static let amber = NSColor(srgbRed: 1.0, green: 0.74, blue: 0.24, alpha: 1)
-    /// Claude is asking you something (vs. amber: asking for permission).
-    static let input = NSColor(srgbRed: 0.45, green: 0.66, blue: 1.0, alpha: 1)
+    /// The brand colour as OKLCH, for building palettes around it.
+    static let claudeTone = OKLCH(claude)!
     static let secondary = Color.white.opacity(0.58)
     static let earRadius: CGFloat = 10
     /// Concave flare where an ear meets the screen's top edge.
