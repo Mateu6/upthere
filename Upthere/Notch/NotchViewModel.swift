@@ -368,11 +368,11 @@ final class NotchViewModel {
         let cap: CGFloat = nowPlaying.isLive && timers.isEmpty ? 360 : 320
         let session = selectedSession
         // The name as drawn, plus 22 for a "+N" badge.
-        var text = TextWidth.of(session?.projectName ?? "", size: 12, weight: .semibold)
+        var text = TextWidth.of(session?.projectName ?? "", Theme.TextStyle.title)
         if claude.visibleSessions.count > 1 { text += 22 }
         if hovered, let session {
             // Hovered: time beside the title, usage after the description.
-            let status = min(TextWidth.of(session.statusLine, size: 10.5, weight: .medium), 140)
+            let status = min(TextWidth.of(session.statusLine, Theme.TextStyle.body), 140)
             text = max(text + 36, status + usageLineWidth(for: session) - 30)
         }
         let chrome = unit + 4 + 12 + 10  // + the scrolling text's edge fade
@@ -385,10 +385,10 @@ final class NotchViewModel {
         guard expanded else { return min(claudePieceWidth(hovered: false), 240) }
         guard let session = selectedSession else { return 240 }
         // Title + time on top; status (at least 120, it rolls) + usage below.
-        let title = TextWidth.of(session.projectName, size: 12, weight: .semibold) + 40
+        let title = TextWidth.of(session.projectName, Theme.TextStyle.title) + 40
         let chips = usageChips(for: session)
-        let usage = chips.isEmpty ? 0 : 12 + chips.reduce(0) { $0 + TextWidth.of($1.text, size: 10, weight: .medium) + 6 }
-        let status = min(TextWidth.of(session.statusLine, size: 10.5, weight: .medium), 160) + usage
+        let usage = chips.isEmpty ? 0 : 12 + chips.reduce(0) { $0 + TextWidth.of($1.text, Theme.TextStyle.chip) + 6 }
+        let status = min(TextWidth.of(session.statusLine, Theme.TextStyle.body), 160) + usage
         let buttons: CGFloat = 28 + (claude.visibleSessions.count > 1 ? 48 : 0)
         return min(unit + 4 + 22 + max(title, status, 120) + buttons, 420).rounded()
     }
@@ -396,7 +396,7 @@ final class NotchViewModel {
     /// Elapsed time plus usage chips, as drawn.
     private func usageLineWidth(for session: ClaudeSession) -> CGFloat {
         let chips = usageChips(for: session)
-        return 30 + (chips.isEmpty ? 0 : 12 + chips.reduce(0) { $0 + TextWidth.of($1.text, size: 10, weight: .medium) + 6 })
+        return 30 + (chips.isEmpty ? 0 : 12 + chips.reduce(0) { $0 + TextWidth.of($1.text, Theme.TextStyle.chip) + 6 })
     }
 
     /// Music in the middle keeps a fixed width so the timers beside it
@@ -407,16 +407,16 @@ final class NotchViewModel {
     /// Hugs "Title · Artist", capped so a long title truncates.
     private func pausedWidth(art: Bool) -> CGFloat {
         guard let snapshot = nowPlaying.current else { return unit + 4 }
-        var text = TextWidth.of(snapshot.title, size: 11, weight: .semibold)
-        if !snapshot.artist.isEmpty { text += TextWidth.of(" · \(snapshot.artist)", size: 11, weight: .medium) }
+        var text = TextWidth.of(snapshot.title, Theme.TextStyle.title)
+        if !snapshot.artist.isEmpty { text += TextWidth.of(" · \(snapshot.artist)", Theme.TextStyle.title) }
         return ((art ? unit + 2 : 10) + min(text + 2, 170) + 10).rounded(.up)
     }
 
     private var musicHugWidth: CGFloat {
         guard let snapshot = nowPlaying.current else { return 250 }
         let text = max(
-            TextWidth.of(snapshot.title, size: 12, weight: .semibold),
-            TextWidth.of(snapshot.artist, size: 10.5, weight: .medium))
+            TextWidth.of(snapshot.title, Theme.TextStyle.title),
+            TextWidth.of(snapshot.artist, Theme.TextStyle.body))
         // +10: the scrolling text's edge fade.
         return (unit + 4 + min(max(text + 10, 60), 200) + 8 + 76 + 10).rounded(.up)
     }
@@ -608,9 +608,9 @@ final class NotchViewModel {
     /// time · model · tokens beneath it.
     private func claudeToolWidth(expanded: Bool) -> CGFloat {
         guard let session = selectedSession else { return 190 }
-        let line = TextWidth.of(ClaudeToolDetail.primaryLine(session), size: 11.5, weight: .medium)
+        let line = TextWidth.of(ClaudeToolDetail.primaryLine(session), Theme.TextStyle.title)
         let chips = claudeEarChips(for: session)
-        let figures = 34 + chips.reduce(0) { $0 + TextWidth.of($1.text, size: 10, weight: .medium) + 12 }
+        let figures = 34 + chips.reduce(0) { $0 + TextWidth.of($1.text, Theme.TextStyle.chip) + 12 }
         let icon: CGFloat = if case .tool = session.activity { 18 } else { 0 }
         let cap: CGFloat = expanded ? 420 : 340
         return min(8 + icon + max(min(line + 10, cap - 60), figures, 120) + 12, cap).rounded(.up)
@@ -969,15 +969,15 @@ final class NotchViewModel {
     }
 }
 
-/// Measures text as the ears draw it (system font), so ears can hug their
+/// Measures text as the ears draw it (same `EarFont`), so ears can hug their
 /// content. Cached: titles and names change rarely.
 enum TextWidth {
     private static var cache: [String: CGFloat] = [:]
 
-    static func of(_ text: String, size: CGFloat, weight: NSFont.Weight) -> CGFloat {
-        let key = "\(size)|\(weight.rawValue)|\(text)"
+    static func of(_ text: String, _ style: EarFont) -> CGFloat {
+        let key = "\(style.size)|\(style.weight)|\(style.mono)|\(style.tabular)|\(text)"
         if let width = cache[key] { return width }
-        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        let font = style.nsFont
         let width = ceil((text as NSString).size(withAttributes: [.font: font]).width) + 2
         if cache.count > 200 { cache.removeAll() }
         cache[key] = width

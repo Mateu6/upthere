@@ -24,6 +24,7 @@ enum DebugBridge {
                 case "expanded": model.debugSet(left: .expanded, right: .expanded)
                 case "expanded-right": model.debugSet(left: .collapsed, right: .expanded)
                 case "check-updates": actions.checkForUpdates()
+                case "settings": actions.openSettings()
                 case "hud-volume": model.debugShowHUD(.volume(0.62), side: .right)
                 case let mode? where mode.hasPrefix("scrub:"):
                     model.leftStatusScrub.scrub(by: CGFloat(Double(mode.dropFirst(6)) ?? 0))

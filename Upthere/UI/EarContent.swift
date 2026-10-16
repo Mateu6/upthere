@@ -36,13 +36,13 @@ struct LeftEarContent: View {
                         // mask when it changes, so nothing snaps.
                         .frame(width: model.leftWidth, alignment: .trailing)
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                        .animation(.spring(duration: Theme.earDuration, bounce: 0), value: model.leftWidth)
-                        .transition(.blurReplace)
+                        .earSpring(value: model.leftWidth)
+                        .transition(.earContent(.left))
                         .id(content.identity)
                 }
             }
             .animation(.smooth(duration: 0.28), value: model.showsHUD(on: .left))
-            .animation(.smooth(duration: 0.28), value: content)
+            .animation(Theme.contentSwap, value: content)
 
             anchorView(h: h, music: music)
                 .frame(width: h + 4, height: h)
@@ -133,7 +133,7 @@ struct LeftEarContent: View {
                 }
                 .padding(.trailing, h + 4)
                 // Grows and shrinks with the ear's own spring.
-                .animation(.spring(duration: Theme.earDuration, bounce: 0), value: piece)
+                .earSpring(value: piece)
             }
         }
     }
@@ -168,13 +168,13 @@ struct RightEarContent: View {
                     details(music: music, tint: tint)
                         .frame(width: model.rightWidth, alignment: .leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .animation(.spring(duration: Theme.earDuration, bounce: 0), value: model.rightWidth)
-                        .transition(.blurReplace)
+                        .earSpring(value: model.rightWidth)
+                        .transition(.earContent(.right))
                         .id(content.identity)
                 }
             }
             .animation(.smooth(duration: 0.28), value: model.showsHUD(on: .right))
-            .animation(.smooth(duration: 0.28), value: content)
+            .animation(Theme.contentSwap, value: content)
 
             anchorView(h: h, music: music, tint: tint)
                 .frame(width: h + 4, height: h)
@@ -337,7 +337,7 @@ struct MusicHUDView: View {
             }
             .frame(height: 4)
             Text(label)
-                .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                .font(Theme.TextStyle.figure.font)
                 .foregroundStyle(Theme.Ink.icon)
                 .fixedSize()
         }

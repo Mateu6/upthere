@@ -125,7 +125,9 @@ enum UsageInfo {
     static func color(for level: Double?) -> Color {
         guard let level else { return Theme.secondary }
         if level >= 0.9 { return Theme.danger }
-        if level >= 0.75 { return Color(nsColor: Theme.amber) }
+        // Nearly there: full white rather than amber, which means "needs
+        // permission" in the notch.
+        if level >= 0.75 { return .white }
         return Theme.secondary
     }
 }
@@ -143,7 +145,7 @@ struct UsageChipsView: View {
                     .fixedSize()
             }
         }
-        .font(.system(size: 10, weight: .medium).monospacedDigit())
+        .font(Theme.TextStyle.chip.font)
         .lineLimit(1)
         .animation(.smooth(duration: 0.25), value: chips)
     }
@@ -182,7 +184,7 @@ struct UsageSummary: View {
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 0) {
                 Text(model.claude.planName.map { "Claude \($0)" } ?? "Claude")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(Theme.TextStyle.title.font)
                     .foregroundStyle(.white)
                 UsageChipsView(chips: chips)
             }

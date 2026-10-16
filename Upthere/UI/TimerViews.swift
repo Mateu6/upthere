@@ -116,7 +116,7 @@ final class TimerRingNSView: NSView {
 struct TimerTime: View {
     let timer: TrackedTimer
     var compact = false
-    var font: Font = .system(size: 11.5, weight: .semibold)
+    var font: Font = Theme.TextStyle.readout.font
     var color: Color = .white
 
     var body: some View {
@@ -209,9 +209,9 @@ struct TimerChip: View {
                     }
                     MarqueeText(
                         text: alerting ? "Time's up · \(timer.label)" : timer.label,
-                        font: .system(size: 10.5, weight: .semibold))
+                        font: Theme.TextStyle.label.font)
                 }
-                TimerTime(timer: timer, font: .system(size: 10, weight: .semibold), color: Color(nsColor: color))
+                TimerTime(timer: timer, font: Theme.TextStyle.figure.font, color: Color(nsColor: color))
             }
             .frame(width: 92, alignment: .leading)
             if hovering {
@@ -310,7 +310,7 @@ struct TimerCollapsed: View {
         }
         if timers.hiddenCount > 0 {
             Text("+\(timers.hiddenCount)")
-                .font(.system(size: 9.5, weight: .bold))
+                .font(Theme.TextStyle.badge.font)
                 .foregroundStyle(Theme.secondary)
                 .lineLimit(1)
                 .fixedSize()
@@ -329,8 +329,8 @@ struct ClaudeChip: View {
             ClaudeGlyph(session: session, size: size * 0.7, ring: model.usageRing)
                 .frame(width: size, height: size)
             VStack(alignment: .leading, spacing: 0) {
-                MarqueeText(text: session.projectName, font: .system(size: 10.5, weight: .semibold))
-                MarqueeText(text: session.statusText, font: .system(size: 10, weight: .medium), color: Theme.secondary)
+                MarqueeText(text: session.projectName, font: Theme.TextStyle.label.font)
+                MarqueeText(text: session.statusText, font: Theme.TextStyle.body.font, color: Theme.secondary)
             }
             .frame(width: 92, alignment: .leading)
         }

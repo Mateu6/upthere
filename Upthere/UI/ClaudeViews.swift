@@ -24,11 +24,15 @@ struct ClaudeGlyph: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: size * 0.95, weight: .semibold))
                     .foregroundStyle(Theme.success)
-                    .transition(.scale.combined(with: .opacity))
+                    .transition(.scale(0.95).combined(with: .opacity))
+            // Both waits share one spark, so a mark tells them apart without
+            // relying on colour.
             case .permission:
                 ClaudeSparkView(style: .waiting, color: Theme.amber)
+                    .overlay(alignment: .bottomTrailing) { StateMark(symbol: "hand.raised.fill", color: Theme.amber, size: size) }
             case .input:
                 ClaudeSparkView(style: .waiting, color: Theme.input)
+                    .overlay(alignment: .bottomTrailing) { StateMark(symbol: "questionmark", color: Theme.input, size: size) }
             case .some(let activity) where activity.isWorking:
                 ClaudeSparkView(style: .working, color: Theme.claude)
             default:
@@ -36,6 +40,23 @@ struct ClaudeGlyph: View {
             }
         }
         .frame(width: size, height: size)
+    }
+}
+
+/// A small symbol on the spark's corner for a state that needs you.
+private struct StateMark: View {
+    let symbol: String
+    let color: NSColor
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: max(6, size * 0.42), weight: .heavy))
+            .foregroundStyle(Color(nsColor: color))
+            .padding(1.5)
+            .background(Circle().fill(.black))
+            .offset(x: size * 0.22, y: size * 0.18)
+            .transition(.scale(0.95).combined(with: .opacity))
     }
 }
 
@@ -66,32 +87,32 @@ struct ClaudeDetail: View {
                     Spacer(minLength: 0)
                     if count > 1 && !expanded {
                         Text("+\(count - 1)")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(Theme.TextStyle.badge.font)
                             .foregroundStyle(.black)
                             .padding(.horizontal, 4)
                             .background(Capsule().fill(Theme.Ink.badge))
                     }
                     MarqueeText(
-                        text: session.projectName, font: .system(size: 12, weight: .semibold), alignment: .trailing,
+                        text: session.projectName, font: Theme.TextStyle.title.font, alignment: .trailing,
                         hugs: true)
                     if expanded {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
                                 .monospacedDigit()
                         }
-                        .font(.system(size: 10, weight: .medium))
+                        .font(Theme.TextStyle.figure.font)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize()
                     }
                 }
                 HStack(spacing: 4) {
                     MarqueeText(
-                        text: statusLine, font: .system(size: 10.5, weight: .medium), color: statusColor,
+                        text: statusLine, font: Theme.TextStyle.body.font, color: statusColor,
                         alignment: .trailing, scrubber: model.leftStatusScrub)
                     if expanded {
                         let chips = model.usageChips(for: session)
                         if !chips.isEmpty {
-                            Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                            Text("·").font(Theme.TextStyle.body.font).foregroundStyle(Theme.secondary)
                             UsageChipsView(chips: chips).fixedSize()
                         }
                     }
@@ -164,19 +185,19 @@ struct ClaudePiece: View {
                 Spacer(minLength: 0)
                 if count > 1 {
                     Text("+\(count - 1)")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(Theme.TextStyle.badge.font)
                         .foregroundStyle(.black)
                         .padding(.horizontal, 4)
                         .background(Capsule().fill(Theme.Ink.badge))
                 }
                 MarqueeText(
-                    text: session.projectName, font: .system(size: 12, weight: .semibold), alignment: .trailing, hugs: true)
+                    text: session.projectName, font: Theme.TextStyle.title.font, alignment: .trailing, hugs: true)
                 if hovering {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
                             .monospacedDigit()
                     }
-                    .font(.system(size: 10, weight: .medium))
+                    .font(Theme.TextStyle.figure.font)
                     .foregroundStyle(Theme.secondary)
                     .fixedSize()
                     .transition(.blurReplace)
@@ -187,13 +208,13 @@ struct ClaudePiece: View {
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
                 MarqueeText(
-                    text: session.statusLine, font: .system(size: 10.5, weight: .medium), color: session.statusColor,
+                    text: session.statusLine, font: Theme.TextStyle.body.font, color: session.statusColor,
                     alignment: .trailing, hugs: true, scrubber: model.leftStatusScrub)
                 if hovering {
                     let chips = model.usageChips(for: session)
                     if !chips.isEmpty {
                         Group {
-                            Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                            Text("·").font(Theme.TextStyle.body.font).foregroundStyle(Theme.secondary)
                             UsageChipsView(chips: chips).fixedSize()
                         }
                         .transition(.blurReplace)
@@ -252,7 +273,7 @@ struct ClaudeToolDetail: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 MarqueeText(
-                    text: Self.primaryLine(session), font: .system(size: 11.5, weight: .medium),
+                    text: Self.primaryLine(session), font: Theme.TextStyle.title.font,
                     color: lineColor, scrubber: scrubber)
                     .id(session.id)
                     .transition(.blurReplace)
@@ -261,10 +282,10 @@ struct ClaudeToolDetail: View {
                         Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
                             .monospacedDigit()
                     }
-                    .font(.system(size: 10, weight: .medium))
+                    .font(Theme.TextStyle.figure.font)
                     .foregroundStyle(Theme.secondary)
                     if !chips.isEmpty {
-                        Text("·").font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                        Text("·").font(Theme.TextStyle.body.font).foregroundStyle(Theme.secondary)
                         UsageChipsView(chips: chips).fixedSize()
                     }
                 }
@@ -309,14 +330,14 @@ struct ClaudeBadge: View {
             .overlay(alignment: .topTrailing) {
                 if count > 1 {
                     Text("\(count)")
-                        .font(.system(size: 8.5, weight: .bold).monospacedDigit())
+                        .font(Theme.TextStyle.badge.font.monospacedDigit())
                         .foregroundStyle(.white)
                         .contentTransition(.numericText())
                         .padding(.horizontal, 3)
                         .frame(minWidth: 12, minHeight: 12)
                         .background(Capsule().fill(Color(nsColor: Theme.claude)))
                         .offset(x: 7, y: -6)
-                        .transition(.blurReplace.combined(with: .scale(0.5)))
+                        .transition(.blurReplace.combined(with: .scale(0.95)))
                 }
             }
             .animation(.spring(duration: 0.24, bounce: 0), value: count)

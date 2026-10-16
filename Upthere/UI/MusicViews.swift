@@ -32,7 +32,7 @@ struct ArtworkThumb: View {
                         .resizable()
                         .frame(width: size * 0.46, height: size * 0.46)
                         .shadow(color: .black.opacity(0.6), radius: 1.5)
-                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
             }
             .offset(x: size * 0.14, y: size * 0.12)
@@ -67,10 +67,10 @@ struct TrackText: View {
     var body: some View {
         let frame: Alignment = alignment == .trailing ? .trailing : .leading
         VStack(alignment: alignment, spacing: 0) {
-            MarqueeText(text: snapshot.title, font: .system(size: 12, weight: .semibold), alignment: frame)
+            MarqueeText(text: snapshot.title, font: Theme.TextStyle.title.font, alignment: frame)
             MarqueeText(
                 text: showAlbum && !snapshot.album.isEmpty ? "\(snapshot.artist) — \(snapshot.album)" : snapshot.artist,
-                font: .system(size: 10.5, weight: .medium), color: Theme.secondary, alignment: frame)
+                font: Theme.TextStyle.body.font, color: Theme.secondary, alignment: frame)
         }
     }
 }
@@ -84,8 +84,8 @@ struct PausedTrackLine: View {
         let artist = snapshot.artist.isEmpty ? Text("") : Text(" · \(snapshot.artist)").foregroundStyle(Theme.secondary)
         MarqueeText(
             text: "\(snapshot.title) · \(snapshot.artist)",
-            font: .system(size: 11, weight: .medium),
-            label: Text("\(Text(snapshot.title).fontWeight(.semibold).foregroundStyle(.white))\(artist)"))
+            font: Theme.TextStyle.title.font,
+            label: Text("\(Text(snapshot.title).fontWeight(.medium).foregroundStyle(.white))\(artist)"))
     }
 }
 
@@ -283,7 +283,7 @@ struct ElapsedLabel: View {
         // Ticks only while visible (expanded), and only once per second.
         TimelineView(.periodic(from: .now, by: 1)) { context in
             Text("\(Theme.time(snapshot.position(at: context.date))) / \(Theme.time(snapshot.duration ?? 0))")
-                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
+                .font(Theme.TextStyle.figure.font)
                 .foregroundStyle(Theme.secondary)
         }
     }

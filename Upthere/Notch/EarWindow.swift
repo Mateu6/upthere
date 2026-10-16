@@ -33,6 +33,8 @@ final class EarWindow {
     /// which the panel keeps covering until the slide settles.
     private var slideCover: CGRect?
     private var slideTask: Task<Void, Never>?
+    /// The ear spring in flight, so a new target can pick up its speed.
+    private var motion: EarMotion?
 
     init(side: NotchSide, root: EarRootView) {
         self.side = side
@@ -63,6 +65,7 @@ final class EarWindow {
             x: side == .left ? content.bounds.width - width : 0, y: 0, width: width, height: geometry.height)
         mask.frame = CGRect(x: 0, y: 0, width: width, height: geometry.height)
         mask.removeAllAnimations()
+        motion = nil
         mask.path = path(ear: layerMask ? ear : maxEar)
         CATransaction.commit()
         place(ear: max(ear, visibleEar))
@@ -101,13 +104,17 @@ final class EarWindow {
 
     func setEar(_ newEar: CGFloat, animated: Bool = true) {
         guard newEar != ear else { return }
+        let previous = ear
         ear = newEar
         shrinkTask?.cancel()
 
         // Grow the window first so the mask never animates into clipped space.
         if newEar > visibleEar { place(ear: newEar) }
 
-        let spring = CASpringAnimation(perceptualDuration: Theme.earDuration, bounce: 0)
+        let now = CACurrentMediaTime()
+        let (current, velocity) = motion?.state(at: now) ?? (previous, 0)
+        let spring = CASpringAnimation(
+            perceptualDuration: Theme.earDuration(opening: newEar > current), bounce: 0)
         let settle: TimeInterval = animated ? spring.settlingDuration : 0
         guard layerMaskAnimates else {
             scheduleShrink(after: settle, newEar: newEar)
@@ -118,9 +125,19 @@ final class EarWindow {
             spring.keyPath = "path"
             spring.fromValue = mask.presentation()?.path ?? mask.path
             spring.toValue = target
+            // Interrupted mid-way (hovering out while it opens): keep the
+            // ear's current speed instead of stopping dead and reversing.
+            // CA wants it as a fraction of the distance per second.
+            let distance = newEar - current
+            if abs(distance) > 0.5 { spring.initialVelocity = velocity / distance }
             spring.duration = spring.settlingDuration
             spring.preferredFrameRateRange = Self.nativeFrameRate(for: geometry)
             mask.add(spring, forKey: "path")
+            motion = EarMotion(
+                from: current, to: newEar, velocity: velocity, start: now,
+                omega: (spring.stiffness / spring.mass).squareRoot())
+        } else {
+            motion = nil
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -194,4 +211,24 @@ private final class EarContainerView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+}
+
+/// A critically damped spring on the ear width, solved in closed form, so
+/// its position and speed are known at any moment without sampling layers.
+private struct EarMotion {
+    let from: CGFloat
+    let to: CGFloat
+    /// Points per second at `start`.
+    let velocity: CGFloat
+    let start: CFTimeInterval
+    let omega: Double
+
+    func state(at time: CFTimeInterval) -> (position: CGFloat, velocity: CGFloat) {
+        let t = max(0, time - start)
+        let e0 = Double(from - to), v0 = Double(velocity)
+        let decay = exp(-omega * t)
+        let offset = (e0 + (v0 + omega * e0) * t) * decay
+        let speed = (v0 - omega * (v0 + omega * e0) * t) * decay
+        return (to + CGFloat(offset), CGFloat(speed))
+    }
 }

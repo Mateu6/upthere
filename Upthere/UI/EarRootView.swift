@@ -2,20 +2,38 @@ import SwiftUI
 
 enum Theme {
     static let spring = Animation.spring(response: 0.36, dampingFraction: 0.84)
-    /// The ear open/close spring (perceptual duration; critically damped, no
-    /// overshoot), run by EarWindow on the mask.
-    static let earDuration: Double = 0.34
+    /// Ear open/close springs (perceptual durations; critically damped, no
+    /// overshoot), run by EarWindow on the mask. Closing takes ~70% of
+    /// opening: with zero bounce, speed and that asymmetry are what make the
+    /// ears feel lively (docs/design-language.md, "Instrument").
+    static let earOpenDuration: Double = 0.26
+    static let earCloseDuration: Double = 0.19
+    /// Layout moves that aren't an ear opening or closing (sliding to a new
+    /// notch position, a piece growing).
+    static let earDuration: Double = earOpenDuration
+    static func earDuration(opening: Bool) -> Double { opening ? earOpenDuration : earCloseDuration }
+    static func earSpring(opening: Bool) -> Animation { .spring(duration: earDuration(opening: opening), bounce: 0) }
+    /// Content swapping inside an ear. It starts with the mask but runs a
+    /// little longer, so the shape leads and the content follows.
+    static let contentSwap = Animation.smooth(duration: 0.24)
+    /// How far new content travels outwards from the notch as it arrives.
+    static let contentSlide: CGFloat = 8
     /// Claude's brand colour, kept at its exact sRGB value. Other colours
     /// are OKLCH tokens in `Palette.swift`.
     static let claude = NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1)
     /// The brand colour as OKLCH, for building palettes around it.
     static let claudeTone = OKLCH(claude)!
-    static let secondary = Color.white.opacity(0.58)
+    static let secondary = Color.white.opacity(0.56)
     static let earRadius: CGFloat = 10
     /// Concave flare where an ear meets the screen's top edge.
     static let shoulderRadius: CGFloat = 6
     /// Bottom corner radius used to hide the black filler inside the physical notch.
     static let notchCornerRadius: CGFloat = 12
+    /// Glass theme strength: the smoky base under the text, the cover-colour
+    /// wash along the bottom, and the tint of the glass itself.
+    static let glassBase: Double = 0.24
+    static let glassWash: Double = 0.45
+    static let glassTint: Double = 0.35
 
     static func time(_ seconds: TimeInterval) -> String {
         let s = Int(max(0, seconds.rounded(.down)))
@@ -80,7 +98,6 @@ struct EarRootView: View {
     private func glassBand(width: CGFloat, height: CGFloat, half: CGFloat, alignment: Alignment) -> some View {
         let shape = EarMaskShape(side: side, notchHalf: half)
         let bandWidth = width + Theme.shoulderRadius + half
-        let spring = Animation.spring(duration: Theme.earDuration, bounce: 0)
         return ZStack(alignment: alignment) {
             GlassFill(
                 tinted: model.appearance.glassTint == .color, blackFade: model.appearance.blackFade,
@@ -88,13 +105,13 @@ struct EarRootView: View {
                 shape: shape
             )
             .frame(width: bandWidth, height: height)
-            .animation(spring, value: bandWidth)
+            .earSpring(value: bandWidth)
 
             content(width: width, height: height, half: half)
                 .mask(alignment: alignment) {
                     shape
                         .frame(width: bandWidth, height: height)
-                        .animation(spring, value: bandWidth)
+                        .earSpring(value: bandWidth)
                 }
         }
     }
@@ -228,11 +245,14 @@ struct GlassFill: View {
             let inner: UnitPoint = side == .left ? .trailing : .leading
             let outer: UnitPoint = side == .left ? .leading : .trailing
             ZStack {
+                // A smoky base inside the glass: the thick, legible glass of
+                // "Instrument", so white text reads on any wallpaper.
+                shape.fill(.black.opacity(Theme.glassBase))
                 if tinted {
                     // A wash of the cover's colors along the bottom.
                     shape
                         .fill(LinearGradient(colors: colors, startPoint: inner, endPoint: outer))
-                        .opacity(0.32)
+                        .opacity(Theme.glassWash)
                         .mask(
                             LinearGradient(
                                 stops: [.init(color: .clear, location: 0.3), .init(color: .white, location: 1)],
@@ -260,7 +280,7 @@ struct GlassFill: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
             // Clear variant: the strongest lensing. Interactive: native
             // highlight and flex under the pointer.
-            .glassEffect((tinted ? Glass.clear.tint(colors[0].opacity(0.25)) : .clear).interactive(), in: shape)
+            .glassEffect((tinted ? Glass.clear.tint(colors[0].opacity(Theme.glassTint)) : .clear).interactive(), in: shape)
         }
         // Dark appearance: see-through without the milky white haze.
         .environment(\.colorScheme, .dark)
