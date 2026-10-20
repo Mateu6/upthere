@@ -4,6 +4,8 @@ import Foundation
 nonisolated enum ClaudeMessage: Sendable {
     case hook(HookEvent)
     case statusLine(StatusLineInfo)
+    /// A request the notch can answer, with the line back to the hook.
+    case answer(HookEvent, ClaudeRequest, AnswerChannel)
 
     static func parse(_ data: Data) -> ClaudeMessage? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }

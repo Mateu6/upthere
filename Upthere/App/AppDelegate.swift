@@ -29,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nowPlaying.start()
         if prefs.claudeEnabled { claude.start() }
         HookInstaller.refreshInstalledHelperIfNeeded()
+        HookInstaller.upgradeIfNeeded()
+        claude.answersEnabled = HookInstaller.isAnswerInstalled
+        offerClaudeConnectionOnce()
         syncClaudePreferences()
         syncVisualizer()
         setUpTimers()
@@ -64,13 +67,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Runs the weekly transcript scan only while it's displayed.
     private func syncClaudePreferences() {
-        let (weekly, account) = withObservationTracking {
-            (prefs.claudeEnabled && prefs.needsWeeklyTokenScan, prefs.claudeEnabled && prefs.accountUsage)
+        let (weekly, account, wait, peek) = withObservationTracking {
+            (
+                prefs.claudeEnabled && prefs.needsWeeklyTokenScan, prefs.claudeEnabled && prefs.accountUsage,
+                prefs.answerWait, prefs.peekOnDone
+            )
         } onChange: { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncClaudePreferences() } }
         }
         claude.weeklyScanEnabled = weekly
         claude.accountUsageEnabled = account
+        claude.answerWait = wait
+        claude.peekOnDone = peek
     }
 
     private func setUpTimers() {
@@ -133,12 +141,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func showSettings() {
+    func showSettings(tab: String? = nil) {
         if settings == nil {
             settings = SettingsWindowController(
                 prefs: prefs, nowPlaying: nowPlaying, claude: claude, queue: queue, calendar: calendar,
                 updater: updater)
         }
-        settings?.show()
+        settings?.show(tab: tab)
+    }
+
+    /// First run with Claude Code on this Mac but no hooks: the notch would
+    /// stay silent about Claude, so show where to connect it, once.
+    private func offerClaudeConnectionOnce() {
+        guard prefs.claudeEnabled, !prefs.claudeConnectOffered, !HookInstaller.isInstalled,
+            FileManager.default.fileExists(atPath: HookInstaller.settingsURL.deletingLastPathComponent().path)
+        else { return }
+        prefs.claudeConnectOffered = true
+        showSettings(tab: "Claude")
     }
 }

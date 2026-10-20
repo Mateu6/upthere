@@ -2,11 +2,15 @@
 // over a Unix domain socket.
 //
 //   upthere-hook                         hook mode (prints nothing)
+//   upthere-hook answer                  answer mode: waits for the app's
+//       decision (a question picked, a permission allowed…) and prints it.
+//       Silence lets Claude Code ask in the terminal as usual.
 //   upthere-hook statusline [--then CMD] status-line mode: forwards the JSON,
 //       then runs CMD (the user's previous status line) with the same input,
 //       or prints a compact line of its own.
 //
-// It must never slow Claude down, so it:
+// Except in answer mode, which the user turns on and which waits on
+// purpose (bounded), it must never slow Claude down, so it:
 //   - avoids Foundation (fast cold start),
 //   - gives up immediately if the app isn't listening,
 //   - caps the time spent writing,
@@ -162,18 +166,55 @@ func controllingTTY() -> String? {
     return tty.hasPrefix("tty") ? "/dev/" + tty : nil
 }
 
-func send(_ payload: [UInt8], kind: String?) {
-    guard payload.first == UInt8(ascii: "{"), let path = socketPath(), let fd = connectSocket(path) else { return }
-    // Envelope: the hook process inherits the terminal's environment, which
-    // tells the app which window to bring forward when the session is clicked
-    // (the Claude app's session id, or the terminal and its tty).
+/// Envelope: the hook process inherits the terminal's environment, which
+/// tells the app which window to bring forward when the session is clicked
+/// (the Claude app's session id, or the terminal and its tty).
+func envelope(_ payload: [UInt8], kind: String?) -> [UInt8] {
     var message = Array(
         "{\"v\":1,\"kind\":\(jsonString(kind)),\"term\":\(jsonString(env("TERM_PROGRAM"))),\"bundle\":\(jsonString(env("__CFBundleIdentifier"))),\"host\":\(jsonString(env("CLAUDE_CODE_HOST_SESSION_ID"))),\"tty\":\(jsonString(controllingTTY())),\"ppid\":\(getppid()),\"payload\":"
             .utf8)
     message.append(contentsOf: payload)
     message.append(contentsOf: Array("}\n".utf8))
-    writeAll(fd, message)
+    return message
+}
+
+func send(_ payload: [UInt8], kind: String?) {
+    guard payload.first == UInt8(ascii: "{"), let path = socketPath(), let fd = connectSocket(path) else { return }
+    writeAll(fd, envelope(payload, kind: kind))
     close(fd)
+}
+
+/// Seconds answer mode waits at most: under the 120 s hook timeout the
+/// installer sets, so Claude Code never discards a late answer.
+let answerDeadline = 110
+
+/// Hands the request to the app and prints its one-line reply. The app
+/// decides how long to wait for you; this is only the outer bound.
+func answer(_ payload: [UInt8]) {
+    guard payload.first == UInt8(ascii: "{"), let path = socketPath(), let fd = connectSocket(path) else { return }
+    defer { close(fd) }
+    // The payload must stay on one line: the app reads up to the newline.
+    let flat = payload.map { $0 == 0x0A || $0 == 0x0D ? UInt8(ascii: " ") : $0 }
+    writeAll(fd, envelope(flat, kind: "answer"))
+
+    let deadline = time(nil) + answerDeadline
+    var reply: [UInt8] = []
+    var chunk = [UInt8](repeating: 0, count: 16 * 1024)
+    while time(nil) < deadline {
+        var pfd = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        let ready = poll(&pfd, 1, 1000)
+        if ready < 0 && errno == EINTR { continue }
+        guard ready > 0 else { continue }
+        let n = chunk.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
+        if n < 0 && errno == EINTR { continue }
+        guard n > 0 else { return }  // the app went away: no decision
+        reply.append(contentsOf: chunk[0..<n])
+        if let newline = reply.firstIndex(of: 0x0A) {
+            let output = Array(reply[..<newline])
+            if !output.isEmpty { writeAll(STDOUT_FILENO, output + [0x0A]) }
+            return
+        }
+    }
 }
 
 /// Replaces this process with `sh -c command`, feeding it `payload` on stdin.
@@ -200,6 +241,11 @@ if arguments.count > 1 && arguments[1] == "statusline" {
         chain(to: arguments[3], payload: payload)
     }
     print(summary(payload))
+    exit(0)
+}
+
+if arguments.count > 1 && arguments[1] == "answer" {
+    answer(payload)
     exit(0)
 }
 

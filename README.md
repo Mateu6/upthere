@@ -6,7 +6,7 @@ act. It never drops below the notch, so it just looks like the notch grew ears.
 
 - **Now Playing:** Spotify, Music and (optionally) any other player, with artwork, controls and a seek bar you can always grab. Scroll sideways to seek and up/down for volume. Sound bars can follow the actual audio.
 - **Up Next:** the upcoming songs beside the cover; click one to jump straight to it (Spotify via its Web API, Music via AppleScript).
-- **Claude Code:** thinking / running `Edit · App.swift` / **needs permission** (amber) / **asking you something** (blue) / done, with the chat title, model, context and plan limits (session and weekly, like the Claude app). Click to open that exact chat; scroll to switch chats.
+- **Claude Code:** thinking / running `Edit · App.swift` / **needs permission** (amber) / **asking you something** (blue) / done, with the chat title, model, context and plan limits (session and weekly, like the Claude app). Click to open that exact chat; scroll to switch chats. Each chat keeps its own colour, and a chat waiting for you elsewhere shows on the +N badge. Answer questions, permissions and plans right in the notch (opt-in).
 - **Timers:** count-ups to log what you're doing and countdowns for what you're waiting on, several at once. Press **⌥⌘T** anywhere, type `waiting for CI 15m`, and each finished timer can become a Calendar event.
 - **Screens without a notch:** Claude, music and timers sit side by side as one centered pill, with your choice of center piece.
 - **Themes:** Classic (black), Aurora (artwork-tinted) and Glass (native Liquid Glass).
@@ -27,12 +27,20 @@ Requires macOS 26 (Tahoe) or later. Right-click the notch for **Settings…**.
 
 ### Claude Code
 
-**Settings → Agents → Connect Claude Code** adds hooks for `SessionStart`,
-`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `Stop`,
-`SubagentStop`, `PreCompact` and `SessionEnd` to `~/.claude/settings.json`
+**Settings → Claude → Connect Claude Code** adds hooks for `SessionStart`,
+`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
+`PermissionRequest`, `Notification`, `Stop`, `StopFailure`, `SubagentStop`,
+`PreCompact` and `SessionEnd` to `~/.claude/settings.json`
 (with a backup at `~/.claude/settings.json.upthere-backup`). **Disconnect**
 removes only Upthere's entries. Works with Claude Code in a terminal, in
 editors and in the Claude app.
+
+**Answer Claude from the notch** (opt-in, Settings → Claude): pick Claude's
+options, Allow or Deny a command (Always allow and Deny and stop sit behind
+⋯), and approve plans in the notch. It adds one more hook group that waits
+for your click. If you don't answer within the time you set (20 s by
+default), or you click ↗, Claude Code asks in the terminal as usual. It
+never waits when that session's window is already in front.
 
 Plan limits (**Settings → Claude info**) come from one of:
 
@@ -77,7 +85,7 @@ No Accessibility, no Screen Recording.
 | Now Playing (all players) | [`mediaremote-adapter`](https://github.com/ungive/mediaremote-adapter): one long-lived `/usr/bin/perl` child streams MediaRemote changes as JSON, needed because macOS 15.4+ restricts MediaRemote to entitled processes. |
 | Spotify / Music | Distributed notifications for state; AppleScript (`osascript`) for commands. It never launches the apps. |
 | Live visualizer | A Core Audio process tap on the player only, analysed with vDSP into four bands. |
-| Claude Code | Hooks run `upthere-hook`, a Foundation-free CLI that sends one message to a Unix socket in about 1 ms and always exits 0. The app tails only active transcripts for title, model and last message. |
+| Claude Code | Hooks run `upthere-hook`, a Foundation-free CLI that sends one message to a Unix socket in about 1 ms and always exits 0. Only `upthere-hook answer` (opt-in) waits, bounded, for your click in the notch. The app tails only active transcripts for title, model, last message, and the Esc presses no hook reports. |
 | Global shortcut | Carbon `RegisterEventHotKey` (no Accessibility needed). |
 | Progress, rings & spinners | `CABasicAnimation`s: zero per-frame work in the app. |
 

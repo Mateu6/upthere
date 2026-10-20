@@ -43,6 +43,75 @@ struct ClaudeGlyph: View {
     }
 }
 
+extension ClaudeActivity {
+    /// The state's symbol beside the right ear's text (nil while thinking,
+    /// compacting, done or idle).
+    var symbol: String? {
+        switch self {
+        case .tool(let name, _): ToolInfo.symbol(name)
+        case .permission: "hand.raised.fill"
+        case .input: "questionmark.bubble.fill"
+        default: nil
+        }
+    }
+
+    /// The colour of a wait (amber for permission, violet for a question).
+    var waitColor: NSColor? {
+        switch self {
+        case .permission: Theme.amber
+        case .input: Theme.input
+        default: nil
+        }
+    }
+
+    /// The small mark that tells the two waits apart without colour.
+    var waitMark: String? {
+        switch self {
+        case .permission: "hand.raised.fill"
+        case .input: "questionmark"
+        default: nil
+        }
+    }
+}
+
+/// "+N" other chats. When one of them is waiting for you it takes that
+/// wait's colour and mark, and a click shows it.
+struct SessionCountBadge: View {
+    let model: NotchViewModel
+    let others: Int
+
+    var body: some View {
+        let waiting = model.waitingElsewhere
+        Group {
+            if let waiting {
+                Button { model.showWaiting() } label: { label(waiting.activity) }
+                    .buttonStyle(LiftButtonStyle(scale: 1.08))
+                    .help("\(waiting.projectName) needs you")
+            } else {
+                label(nil)
+            }
+        }
+        .animation(.spring(duration: 0.24, bounce: 0), value: waiting?.id)
+    }
+
+    private func label(_ activity: ClaudeActivity?) -> some View {
+        HStack(spacing: 2) {
+            if let mark = activity?.waitMark {
+                Image(systemName: mark)
+                    .font(.system(size: 7, weight: .heavy))
+                    .transition(.blurReplace.combined(with: .scale(0.95)))
+            }
+            Text("+\(others)")
+                .contentTransition(.numericText())
+        }
+        .font(Theme.TextStyle.badge.font)
+        .foregroundStyle(.black)
+        .padding(.horizontal, 4)
+        .background(Capsule().fill(activity?.waitColor.map { Color(nsColor: $0) } ?? Theme.Ink.badge))
+        .contentShape(Capsule())
+    }
+}
+
 /// A small symbol on the spark's corner for a state that needs you.
 private struct StateMark: View {
     let symbol: String
@@ -67,13 +136,31 @@ struct ClaudeDetail: View {
     let expanded: Bool
 
     var body: some View {
+        if model.answerShown {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                ClaudeAnswerRow(
+                    model: model, session: session, request: model.shownRequest, echo: model.shownEcho,
+                    compact: model.answerIsCompact)
+            }
+            .id("answer-\(session.id)")
+            .transition(.blurReplace)
+        } else {
+            detail.transition(.blurReplace)
+        }
+    }
+
+    private var detail: some View {
         let count = model.claude.visibleSessions.count
         // The spark is the ear's anchor next to the notch (LeftEarContent);
         // text reads outwards from it, buttons sit at the outer end.
-        HStack(spacing: 8) {
-            if expanded {
+        return HStack(spacing: 8) {
+            if expanded || session.needsYou {
                 pagerButton("arrow.up.forward.app") { model.claude.focus(session) }
                     .help(session.hostSessionID != nil ? "Open this chat in Claude" : "Show terminal")
+                    .transition(.blurReplace)
+            }
+            if expanded {
                 if count > 1 {
                     pagerButton("chevron.left") { model.cycleSession(by: -1) }
                     pagerButton("chevron.right") { model.cycleSession(by: 1) }
@@ -86,11 +173,7 @@ struct ClaudeDetail: View {
                 HStack(spacing: 4) {
                     Spacer(minLength: 0)
                     if count > 1 && !expanded {
-                        Text("+\(count - 1)")
-                            .font(Theme.TextStyle.badge.font)
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 4)
-                            .background(Capsule().fill(Theme.Ink.badge))
+                        SessionCountBadge(model: model, others: count - 1)
                     }
                     MarqueeText(
                         text: session.projectName, font: Theme.TextStyle.title.font, alignment: .trailing,
@@ -151,7 +234,8 @@ extension ClaudeSession {
     }
 
     var statusColor: Color {
-        switch activity {
+        guard needsYou || !activity.needsUser else { return Theme.secondary }
+        return switch activity {
         case .permission: Color(nsColor: Theme.amber)
         case .input: Color(nsColor: Theme.input)
         default: Theme.secondary
@@ -167,9 +251,24 @@ struct ClaudePiece: View {
     let session: ClaudeSession
 
     var body: some View {
+        if model.answerShown {
+            ClaudeAnswerRow(
+                model: model, session: session, request: model.shownRequest, echo: model.shownEcho,
+                compact: model.answerIsCompact
+            )
+            .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.leading, 10)
+                .padding(.trailing, 2)
+                .transition(.blurReplace)
+        } else {
+            piece.transition(.blurReplace)
+        }
+    }
+
+    private var piece: some View {
         let count = model.claude.visibleSessions.count
         let hovering = model.claudePieceHovered
-        Button { model.claude.focus(session) } label: {
+        return Button { model.claude.focus(session) } label: {
             label(count: count, hovering: hovering)
         }
         .buttonStyle(PieceButtonStyle(hovering: hovering))
@@ -184,11 +283,7 @@ struct ClaudePiece: View {
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
                 if count > 1 {
-                    Text("+\(count - 1)")
-                        .font(Theme.TextStyle.badge.font)
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 4)
-                        .background(Capsule().fill(Theme.Ink.badge))
+                    SessionCountBadge(model: model, others: count - 1)
                 }
                 MarqueeText(
                     text: session.projectName, font: Theme.TextStyle.title.font, alignment: .trailing, hugs: true)
@@ -266,10 +361,12 @@ struct ClaudeToolDetail: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            if case .tool(let name, _) = session.activity {
-                Image(systemName: ToolInfo.symbol(name))
+            if let symbol = session.activity.symbol {
+                Image(systemName: symbol)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(nsColor: Theme.claude))
+                    .foregroundStyle(Color(nsColor: session.activity.waitColor ?? Theme.claude))
+                    .contentTransition(.symbolEffect(.replace))
+                    .transition(.blurReplace)
             }
             VStack(alignment: .leading, spacing: 0) {
                 MarqueeText(
@@ -329,13 +426,15 @@ struct ClaudeBadge: View {
             .frame(width: 16, height: 16)
             .overlay(alignment: .topTrailing) {
                 if count > 1 {
+                    // A chat waiting elsewhere tints the count; light tones take dark text.
+                    let waitColor = model.waitingElsewhere?.activity.waitColor
                     Text("\(count)")
                         .font(Theme.TextStyle.badge.font.monospacedDigit())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(waitColor == nil ? .white : .black)
                         .contentTransition(.numericText())
                         .padding(.horizontal, 3)
                         .frame(minWidth: 12, minHeight: 12)
-                        .background(Capsule().fill(Color(nsColor: Theme.claude)))
+                        .background(Capsule().fill(Color(nsColor: waitColor ?? Theme.claude)))
                         .offset(x: 7, y: -6)
                         .transition(.blurReplace.combined(with: .scale(0.95)))
                 }

@@ -183,6 +183,12 @@ final class Preferences {
     /// Keep the Claude ear (ring + limits) visible when no session is active.
     var showUsageWhenIdle: Bool { didSet { save(showUsageWhenIdle, "showUsageWhenIdle") } }
     var contextWindow: ContextWindowSize { didSet { save(contextWindow.rawValue, "contextWindow") } }
+    /// How long the notch holds a question before the terminal asks it.
+    var answerWait: Double { didSet { save(answerWait, "answerWait") } }
+    /// The Claude ear peeks for a moment when a turn finishes.
+    var peekOnDone: Bool { didSet { save(peekOnDone, "peekOnDone") } }
+    /// Settings → Claude was shown once because hooks weren't connected.
+    var claudeConnectOffered: Bool { didSet { save(claudeConnectOffered, "claudeConnectOffered") } }
 
     // Timers
     var timerHotKey: HotKey.Preset { didSet { save(timerHotKey.rawValue, "timerHotKey") } }
@@ -204,6 +210,9 @@ final class Preferences {
         useMediaRemoteAdapter = defaults.object(forKey: "useMediaRemoteAdapter") as? Bool ?? true
         pausedLingerMinutes = defaults.object(forKey: "pausedLingerMinutes") as? Double ?? 5
         claudeEnabled = defaults.object(forKey: "claudeEnabled") as? Bool ?? true
+        answerWait = defaults.object(forKey: "answerWait") as? Double ?? 20
+        peekOnDone = defaults.object(forKey: "peekOnDone") as? Bool ?? true
+        claudeConnectOffered = defaults.object(forKey: "claudeConnectOffered") as? Bool ?? false
         maxEarWidth = defaults.object(forKey: "maxEarWidth") as? Double ?? 340
         earCloseDelay = defaults.object(forKey: "earCloseDelay") as? Double ?? 0.3
         display = DisplayChoice(rawValue: defaults.string(forKey: "display") ?? "") ?? .builtIn

@@ -5,6 +5,7 @@ struct ClaudeSettings: View {
     let claude: ClaudeModel
     @State private var hooksInstalled = HookInstaller.isInstalled
     @State private var hookError: String?
+    @State private var answersInstalled = HookInstaller.isAnswerInstalled
     @State private var statusLineInstalled = HookInstaller.isStatusLineInstalled
     @State private var statusLineError: String?
 
@@ -15,6 +16,8 @@ struct ClaudeSettings: View {
                     .onChange(of: prefs.claudeEnabled) { _, enabled in
                         if enabled { claude.start() } else { claude.stop() }
                     }
+                Toggle("Peek when Claude finishes", isOn: $prefs.peekOnDone)
+                    .disabled(!prefs.claudeEnabled)
                 ConnectionRow(
                     title: "Claude Code hooks", connected: hooksInstalled, connect: "Connect Claude Code",
                     onConnect: { runHooks(HookInstaller.install) }, onDisconnect: { runHooks(HookInstaller.uninstall) })
@@ -22,6 +25,22 @@ struct ClaudeSettings: View {
             } footer: {
                 SettingsFooter(
                     text: "Adds hooks to ~/.claude/settings.json (a backup is saved next to it). The hook only forwards events to Upthere over a local socket and never blocks Claude."
+                )
+            }
+
+            Section {
+                Toggle("Answer Claude from the notch", isOn: answersBinding)
+                    .disabled(!hooksInstalled)
+                if answersInstalled {
+                    Stepper(value: $prefs.answerWait, in: 5...90, step: 5) {
+                        LabeledContent("Then ask in the terminal after", value: "\(Int(prefs.answerWait)) s")
+                    }
+                }
+            } footer: {
+                SettingsFooter(
+                    text: hooksInstalled
+                        ? "Pick Claude's options, allow or deny a command, and approve plans right in the notch. While a question waits there, the terminal shows it after this long or when you click Terminal. It never waits when that session's window is already in front."
+                        : "Connect Claude Code first."
                 )
             }
 
@@ -68,6 +87,13 @@ struct ClaudeSettings: View {
         .settingsTab()
     }
 
+    private var answersBinding: Binding<Bool> {
+        Binding(
+            get: { answersInstalled },
+            set: { on in runHooks { try HookInstaller.setAnswers(on) } }
+        )
+    }
+
     private func runHooks(_ action: () throws -> Void) {
         do {
             try action()
@@ -76,6 +102,8 @@ struct ClaudeSettings: View {
             hookError = error.localizedDescription
         }
         hooksInstalled = HookInstaller.isInstalled
+        answersInstalled = hooksInstalled && HookInstaller.isAnswerInstalled
+        claude.answersEnabled = answersInstalled
     }
 
     private func runStatusLine(_ action: () throws -> Void) {

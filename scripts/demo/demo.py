@@ -132,7 +132,7 @@ class Session:
 
     def _append(self, line):
         with self.transcript.open("a") as f:
-            f.write(json.dumps(line) + "\n")
+            f.write(json.dumps(line, separators=(",", ":")) + "\n")  # compact, like Claude Code
 
     def _assistant(self, text):
         return {

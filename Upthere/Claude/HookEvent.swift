@@ -7,9 +7,11 @@ nonisolated struct HookEvent: Sendable, Equatable {
         case userPromptSubmit = "UserPromptSubmit"
         case preToolUse = "PreToolUse"
         case postToolUse = "PostToolUse"
+        case postToolUseFailure = "PostToolUseFailure"
         case permissionRequest = "PermissionRequest"
         case notification = "Notification"
         case stop = "Stop"
+        case stopFailure = "StopFailure"
         case subagentStop = "SubagentStop"
         case preCompact = "PreCompact"
         case sessionEnd = "SessionEnd"
@@ -21,6 +23,14 @@ nonisolated struct HookEvent: Sendable, Equatable {
     var transcriptPath: String?
     var toolName: String?
     var toolDetail: String?
+    /// Ties PreToolUse to its PostToolUse (PermissionRequest has none).
+    var toolUseID: String?
+    /// Set when a subagent made the call.
+    var agentID: String?
+    /// SessionStart: startup, resume, clear, compact, fork.
+    var source: String?
+    /// PreCompact: manual or auto.
+    var trigger: String?
     var message: String?
     var notificationType: String?
     /// What Claude asks, for AskUserQuestion / ExitPlanMode.
@@ -62,6 +72,10 @@ nonisolated struct HookEvent: Sendable, Equatable {
             transcriptPath: payload["transcript_path"] as? String,
             toolName: toolName,
             toolDetail: toolName.flatMap { ToolInfo.detail(tool: $0, input: toolInput ?? [:]) },
+            toolUseID: payload["tool_use_id"] as? String,
+            agentID: payload["agent_id"] as? String,
+            source: payload["source"] as? String,
+            trigger: payload["trigger"] as? String,
             message: payload["message"] as? String,
             notificationType: payload["notification_type"] as? String,
             question: Self.question(tool: toolName, input: toolInput),

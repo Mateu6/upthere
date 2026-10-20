@@ -5,7 +5,10 @@ import os
 nonisolated private let hubLog = Logger(subsystem: "dev.upthere.app", category: "claude-hub")
 
 /// Unix-domain socket server receiving hook events from `upthere-hook`.
-/// One connection carries one message; the client closes when done.
+/// One connection carries one message; the client closes when done. An
+/// answer request (`"kind":"answer"`) is the exception: its line is
+/// delivered as soon as it's complete and the connection stays open for the
+/// reply, until the app answers or the hook goes away.
 /// Everything runs on a private queue; parsed events hop to the main actor.
 nonisolated final class ClaudeHub: @unchecked Sendable {
     static var defaultSocketURL: URL {
@@ -18,6 +21,8 @@ nonisolated final class ClaudeHub: @unchecked Sendable {
     private let onMessage: @Sendable (ClaudeMessage) -> Void
     private var listenSource: DispatchSourceRead?
     private var clients: [Int32: (source: DispatchSourceRead, buffer: Data)] = [:]
+    private var answers: [Int32: AnswerChannel] = [:]
+    private static let answerPrefix = Data(#"{"v":1,"kind":"answer""#.utf8)
     private static let maxMessageSize = 16 * 1024 * 1024
 
     init(path: String = ClaudeHub.defaultSocketURL.path, onMessage: @escaping @Sendable (ClaudeMessage) -> Void) {
@@ -35,6 +40,8 @@ nonisolated final class ClaudeHub: @unchecked Sendable {
             listenSource = nil
             for (_, client) in clients { client.source.cancel() }
             clients.removeAll()
+            for (_, channel) in answers { channel.markClosed() }
+            answers.removeAll()
             unlink(path)
         }
     }
@@ -101,8 +108,10 @@ nonisolated final class ClaudeHub: @unchecked Sendable {
         while true {
             let n = chunk.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
             if n > 0 {
+                guard answers[fd] == nil else { continue }  // nothing more is expected
                 clients[fd]?.buffer.append(contentsOf: chunk[0..<n])
                 if (clients[fd]?.buffer.count ?? 0) > Self.maxMessageSize { return finish(fd, deliver: false) }
+                deliverAnswerIfComplete(fd)
             } else if n == 0 {
                 return finish(fd, deliver: true)
             } else if errno == EAGAIN || errno == EWOULDBLOCK {
@@ -116,7 +125,87 @@ nonisolated final class ClaudeHub: @unchecked Sendable {
     private func finish(_ fd: Int32, deliver: Bool) {
         guard let client = clients.removeValue(forKey: fd) else { return }
         client.source.cancel()
+        if let channel = answers.removeValue(forKey: fd) {
+            channel.markClosed()
+            return
+        }
         guard deliver, let message = ClaudeMessage.parse(client.buffer) else { return }
         onMessage(message)
+    }
+
+    /// An answer request is one line; deliver it without waiting for EOF.
+    private func deliverAnswerIfComplete(_ fd: Int32) {
+        guard let buffer = clients[fd]?.buffer, buffer.starts(with: Self.answerPrefix),
+            let newline = buffer.firstIndex(of: 0x0A)
+        else { return }
+        let channel = AnswerChannel(hub: self, fd: fd)
+        answers[fd] = channel
+        guard let event = HookEvent.parse(buffer[buffer.startIndex..<newline]),
+            let root = try? JSONSerialization.jsonObject(with: buffer[buffer.startIndex..<newline]) as? [String: Any],
+            let payload = root["payload"] as? [String: Any], let request = ClaudeRequest.parse(payload: payload)
+        else { return reply(fd: fd, "") }
+        onMessage(.answer(event, request, channel))
+    }
+
+    /// Sends the hook its stdout (empty: no decision) and closes.
+    fileprivate func reply(fd: Int32, _ output: String) {
+        queue.async { [self] in
+            guard clients[fd] != nil else { return }
+            var bytes = Array(output.utf8)
+            bytes.append(0x0A)
+            var offset = 0
+            while offset < bytes.count {
+                let n = bytes.withUnsafeBytes { Darwin.write(fd, $0.baseAddress! + offset, bytes.count - offset) }
+                if n > 0 { offset += n } else if n < 0 && errno == EINTR { continue } else { break }
+            }
+            answers.removeValue(forKey: fd)
+            finish(fd, deliver: false)
+        }
+    }
+}
+
+/// The open line back to a waiting `upthere-hook answer`.
+nonisolated final class AnswerChannel: @unchecked Sendable {
+    private weak var hub: ClaudeHub?
+    private let fd: Int32
+    private let lock = NSLock()
+    private var closed = false
+    private var onClose: (@Sendable () -> Void)?
+
+    fileprivate init(hub: ClaudeHub, fd: Int32) {
+        self.hub = hub
+        self.fd = fd
+    }
+
+    /// The hook prints `output` as its decision; an empty string means none,
+    /// and Claude Code asks in the terminal as usual.
+    func reply(_ output: String) {
+        lock.lock()
+        let wasClosed = closed
+        closed = true
+        onClose = nil
+        lock.unlock()
+        guard !wasClosed else { return }
+        hub?.reply(fd: fd, output)
+    }
+
+    /// Called once if the hook goes away first (timed out, Claude stopped).
+    func whenClosed(_ handler: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if closed {
+            lock.unlock()
+            return handler()
+        }
+        onClose = handler
+        lock.unlock()
+    }
+
+    fileprivate func markClosed() {
+        lock.lock()
+        let handler = closed ? nil : onClose
+        closed = true
+        onClose = nil
+        lock.unlock()
+        handler?()
     }
 }

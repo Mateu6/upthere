@@ -35,6 +35,14 @@ enum DebugBridge {
                 case "timer-pin-all": for t in model.timers.timers where !t.isPinned { model.timers.togglePin(t.id) }
                 case "claude-off": model.prefs.claudeEnabled = false
                 case "claude-on": model.prefs.claudeEnabled = true
+                case "claude-next": model.cycleSession(by: 1)
+                // Answering from the notch, in memory only (settings.json untouched).
+                case "answers-on": model.claude.answersEnabled = true
+                case "answers-off": model.claude.answersEnabled = false
+                case "answer-more": if let r = model.shownRequest { model.updateDraft(for: r) { $0.more = true } }
+                case "answer-handover": if let r = model.shownRequest { model.claude.handOver(r.id) }
+                case let mode? where mode.hasPrefix("answer:"):
+                    if let r = model.shownRequest { model.claude.answer(r.id, with: Self.answer(String(mode.dropFirst(7)), for: r)) }
                 case "demo-on": model.claude.demoOnly = true
                 case "demo-off": model.claude.demoOnly = false
                 case "music-off": model.nowPlaying.debugHidden = true
@@ -79,6 +87,21 @@ enum DebugBridge {
                         to: URL(fileURLWithPath: dir).appendingPathComponent("notch.txt"), atomically: true, encoding: .utf8)
                 }
             }
+        }
+    }
+
+    /// `answer:allow|always|deny|stop|approve|keep|first` for the shown request.
+    private static func answer(_ name: String, for request: ClaudeRequest) -> ClaudeAnswer {
+        switch name {
+        case "always": return .allowAlways
+        case "deny": return .deny
+        case "stop": return .denyAndStop
+        case "approve": return .approvePlan
+        case "keep": return .keepPlanning
+        case "first":
+            guard case .questions(let list) = request.kind else { return .allow }
+            return .options(Dictionary(uniqueKeysWithValues: list.map { ($0.question, [$0.options[0].label]) }))
+        default: return .allow
         }
     }
 

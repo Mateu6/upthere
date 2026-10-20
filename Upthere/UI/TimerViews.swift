@@ -330,7 +330,7 @@ struct ClaudeChip: View {
                 .frame(width: size, height: size)
             VStack(alignment: .leading, spacing: 0) {
                 MarqueeText(text: session.projectName, font: Theme.TextStyle.label.font)
-                MarqueeText(text: session.statusText, font: Theme.TextStyle.body.font, color: Theme.secondary)
+                MarqueeText(text: session.statusText, font: Theme.TextStyle.body.font, color: session.statusColor)
             }
             .frame(width: 92, alignment: .leading)
         }

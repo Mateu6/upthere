@@ -568,3 +568,211 @@ struct TimerModelTests {
         #expect(fields.notes == "Countdown 15m (+5m over) · 5m paused · logged by Upthere")
     }
 }
+
+// MARK: Flowcheck 2026-10-19: Claude waits, colours, answering from the notch
+
+@MainActor
+struct ClaudeWaitTests {
+    private func send(_ model: ClaudeModel, _ name: String, session: String = "s1", extra: String = "") {
+        let json = #"{"hook_event_name":"\#(name)","session_id":"\#(session)","cwd":"/p/\#(session)"\#(extra)}"#
+        model.handle(HookEvent.parse(Data(json.utf8))!)
+    }
+
+    private func askPermission(_ model: ClaudeModel, session: String = "s1", id: String = "toolu_1") {
+        send(model, "PreToolUse", session: session, extra: #","tool_name":"Bash","tool_use_id":"\#(id)","tool_input":{"command":"rm -rf build"}"#)
+        send(model, "Notification", session: session, extra: #","message":"Claude needs your permission to use Bash","notification_type":"permission_prompt""#)
+    }
+
+    @Test func parallelCallsAndSubagentsDontHideAWait() {
+        let model = ClaudeModel()
+        send(model, "UserPromptSubmit")
+        askPermission(model)
+        #expect(model.attention != nil)
+        send(model, "PreToolUse", extra: #","tool_name":"Read","tool_use_id":"toolu_2","tool_input":{"file_path":"/a.swift"}"#)
+        send(model, "PostToolUse", extra: #","tool_name":"Read","tool_use_id":"toolu_2""#)
+        send(model, "SubagentStop")
+        #expect(model.primary?.activity == .permission(tool: "Bash", detail: "rm -rf build"))
+        send(model, "PostToolUse", extra: #","tool_name":"Bash","tool_use_id":"toolu_1""#)
+        #expect(model.primary?.activity == .thinking)
+    }
+
+    @Test func compactAndIdlePromptEndStuckTurns() {
+        let model = ClaudeModel()
+        send(model, "UserPromptSubmit")
+        send(model, "PreCompact", extra: #","trigger":"manual""#)
+        #expect(model.primary?.activity == .compacting)
+        send(model, "SessionStart", extra: #","source":"compact""#)
+        #expect(model.sessions.first?.activity == .idle)
+
+        send(model, "UserPromptSubmit")
+        send(model, "PreCompact", extra: #","trigger":"auto""#)
+        send(model, "SessionStart", extra: #","source":"compact""#)
+        #expect(model.primary?.activity == .thinking)
+
+        // Esc: no Stop arrives; the idle prompt notification catches it.
+        askPermission(model)
+        send(model, "Notification", extra: #","message":"Claude is waiting for your input","notification_type":"idle_prompt""#)
+        #expect(model.sessions.first?.activity == .idle)
+        send(model, "StopFailure")
+        #expect(model.sessions.first?.activity == .done)
+    }
+
+    @Test func longestWaitingComesFirst() {
+        let model = ClaudeModel()
+        send(model, "UserPromptSubmit", session: "old")
+        askPermission(model, session: "old")
+        send(model, "UserPromptSubmit", session: "new")
+        askPermission(model, session: "new", id: "toolu_9")
+        // "new" was inserted first in the list, but "old" has waited longer.
+        #expect(model.sessions.first?.id == "new")
+        #expect(model.attention?.id == "old")
+    }
+
+    @Test func offClearsEverything() {
+        let model = ClaudeModel()
+        send(model, "UserPromptSubmit")
+        askPermission(model)
+        model.stop()
+        #expect(model.sessions.isEmpty)
+        #expect(model.attention == nil)
+    }
+
+    @Test func colourFollowsTheChatOnScreenButWaitsComeFirst() {
+        let prefs = Preferences(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)
+        let claude = ClaudeModel()
+        let geometry = NotchGeometry(
+            screenFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            notchRect: CGRect(x: 656, y: 950, width: 200, height: 32), hasNotch: true)
+        let model = NotchViewModel(nowPlaying: NowPlayingModel(prefs: prefs), claude: claude, prefs: prefs, geometry: geometry)
+        send(claude, "UserPromptSubmit", session: "a")
+        send(claude, "UserPromptSubmit", session: "b")
+        askPermission(claude, session: "a")
+        #expect(model.selectedSession?.id == "a")
+        #expect(model.palette(for: .left) == NotchViewModel.attentionPalette)
+
+        // Pick the working chat: its own colour, and the badge points back.
+        model.select(claude.sessions.first { $0.id == "b" }!)
+        #expect(model.selectedSession?.id == "b")
+        #expect(model.palette(for: .left) == NotchViewModel.claudePalette)
+        #expect(model.waitingElsewhere?.id == "a")
+
+        // A new wait elsewhere takes over the picked chat.
+        send(claude, "UserPromptSubmit", session: "c")
+        send(claude, "PreToolUse", session: "c", extra: #","tool_name":"AskUserQuestion","tool_use_id":"q1","tool_input":{"questions":[{"question":"Which?"}]}"#)
+        #expect(model.selectedSession?.id == "c")
+        #expect(model.palette(for: .left) == NotchViewModel.inputPalette)
+    }
+}
+
+struct TranscriptSignalTests {
+    @Test func seesInterruptsAndToolResultsOnTheMainChainOnly() {
+        var info = TranscriptInfo()
+        TranscriptTailer.applySignals(
+            line: Data(#"{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#.utf8),
+            to: &info)
+        TranscriptTailer.applySignals(
+            line: Data(#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"x"}]}}"#.utf8),
+            to: &info)
+        TranscriptTailer.applySignals(
+            line: Data(#"{"type":"user","isSidechain":true,"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_side"}]}}"#.utf8),
+            to: &info)
+        #expect(info.interrupts == 1)
+        #expect(info.recentToolResults == ["toolu_1"])
+    }
+}
+
+struct ClaudeRequestTests {
+    private func payload(_ json: String) -> [String: Any] {
+        try! JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
+    }
+
+    @Test func answersQuestionsByEchoingTheInputWithAnswers() throws {
+        let request = try #require(
+            ClaudeRequest.parse(
+                payload: payload(
+                    #"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which framework?","header":"Framework","multiSelect":false,"options":[{"label":"React","description":"Components"},{"label":"Vue"}]},{"question":"Extras?","multiSelect":true,"options":[{"label":"Tests"},{"label":"Lint"}]}]}}"#
+                ))
+            )
+        guard case .questions(let questions) = request.kind else { Issue.record("not questions"); return }
+        #expect(questions.count == 2)
+        #expect(questions[1].multiSelect)
+
+        let output = try #require(request.output(for: .options(["Which framework?": ["React"], "Extras?": ["Tests", "Lint"]])))
+        let root = try #require(try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+        let specific = try #require(root["hookSpecificOutput"] as? [String: Any])
+        #expect(specific["hookEventName"] as? String == "PreToolUse")
+        #expect(specific["permissionDecision"] as? String == "allow")
+        let updated = try #require(specific["updatedInput"] as? [String: Any])
+        #expect((updated["questions"] as? [Any])?.count == 2)
+        #expect(updated["answers"] as? [String: String] == ["Which framework?": "React", "Extras?": "Tests, Lint"])
+        #expect(!output.contains("\n"))
+        // A permission answer doesn't fit a question.
+        #expect(request.output(for: .allow) == nil)
+    }
+
+    @Test func permissionShowsTheExactCommandAndAlwaysAllowRule() throws {
+        let request = try #require(
+            ClaudeRequest.parse(
+                payload: payload(
+                    #"{"hook_event_name":"PermissionRequest","session_id":"s1","tool_name":"Bash","tool_input":{"command":"npm run lint","description":"Lint"},"permission_suggestions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"npm run lint"}],"behavior":"allow","destination":"localSettings"}]}"#
+                ))
+            )
+        #expect(request.kind == .permission(tool: "Bash", target: "npm run lint", rule: "Bash(npm run lint)"))
+        let always = try #require(request.output(for: .allowAlways))
+        #expect(always.contains(#""updatedPermissions":[{"#))
+        #expect(always.contains(#""behavior":"allow""#))
+        let stop = try #require(request.output(for: .denyAndStop))
+        #expect(stop.contains(#""interrupt":true"#))
+    }
+
+    @Test func planApprovalAndKeepPlanning() throws {
+        let request = try #require(
+            ClaudeRequest.parse(
+                payload: payload(
+                    ##"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"ExitPlanMode","tool_input":{"plan":"# Add dark mode\n1. Tokens"}}"##
+                ))
+            )
+        #expect(request.kind == .plan(summary: "Add dark mode"))
+        #expect(request.output(for: .approvePlan)?.contains(#""permissionDecision":"allow""#) == true)
+        #expect(request.output(for: .keepPlanning)?.contains(#""permissionDecision":"deny""#) == true)
+    }
+
+    @MainActor @Test func clicksTooSoonAreIgnored() {
+        let request = ClaudeRequest.parse(
+            payload: payload(#"{"hook_event_name":"PermissionRequest","session_id":"s1","tool_name":"Bash","tool_input":{"command":"ls"}}"#))!
+        #expect(!request.isAwake)
+        let old = ClaudeRequest.parse(
+            payload: payload(#"{"hook_event_name":"PermissionRequest","session_id":"s1","tool_name":"Bash","tool_input":{"command":"ls"}}"#),
+            received: .now.addingTimeInterval(-1))!
+        #expect(old.isAwake)
+    }
+}
+
+struct AnswerInstallerTests {
+    @Test func answerGroupComesAndGoesOnItsOwn() {
+        let base = HookInstaller.installing(into: [:], command: "\"/x/upthere-hook\"")
+        #expect(HookInstaller.isInstalled(in: base) && HookInstaller.isCurrent(in: base))
+        #expect(!HookInstaller.isAnswerInstalled(in: base))
+
+        let on = HookInstaller.installing(into: base, command: "\"/x/upthere-hook\"", answers: true)
+        #expect(HookInstaller.isAnswerInstalled(in: on))
+        let permission = (on["hooks"] as! [String: Any])["PermissionRequest"] as! [[String: Any]]
+        #expect(permission.count == 2)
+        let answer = permission.first { (($0["hooks"] as! [[String: Any]])[0]["command"] as! String).hasSuffix(" answer") }!
+        #expect((answer["hooks"] as! [[String: Any]])[0]["timeout"] as? Int == 120)
+
+        let off = HookInstaller.installing(into: on, command: "\"/x/upthere-hook\"", answers: false)
+        #expect(!HookInstaller.isAnswerInstalled(in: off) && HookInstaller.isInstalled(in: off))
+        #expect(HookInstaller.removing(from: on)["hooks"] == nil)
+    }
+
+    @Test func olderInstallsStillCountAsConnected() {
+        var hooks: [String: Any] = [:]
+        for event in HookInstaller.coreEvents {
+            hooks[event] = [["hooks": [["type": "command", "command": "\"/x/upthere-hook\"", "timeout": 5]]]]
+        }
+        let old: [String: Any] = ["hooks": hooks]
+        #expect(HookInstaller.isInstalled(in: old))
+        #expect(!HookInstaller.isCurrent(in: old))
+    }
+}

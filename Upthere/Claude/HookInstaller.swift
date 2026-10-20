@@ -8,11 +8,23 @@ nonisolated private let installerLog = Logger(subsystem: "dev.upthere.app", cate
 /// The hook command points at a stable copy of the helper in Application
 /// Support, so moving or updating the app never breaks Claude Code.
 nonisolated enum HookInstaller {
-    static let events = [
+    /// Connected means these are present (the original set, so an older
+    /// install still reads as connected and gets upgraded at launch).
+    static let coreEvents = [
         "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification",
         "Stop", "SubagentStop", "PreCompact", "SessionEnd",
     ]
+    static let events = coreEvents + ["PostToolUseFailure", "PermissionRequest", "StopFailure"]
     static let marker = "upthere-hook"
+
+    /// Answer from the notch (opt-in): these hooks wait for your click.
+    /// Claude Code discards output past `answerTimeout`; the helper gives up
+    /// a little earlier (`answerDeadline` in UpthereHook).
+    static let answerEvents: [(event: String, matcher: String)] = [
+        ("PreToolUse", "AskUserQuestion|ExitPlanMode"), ("PermissionRequest", "*"),
+    ]
+    static let answerTimeout = 120
+    static let answerArgument = " answer"
 
     static var settingsURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
@@ -32,21 +44,46 @@ nonisolated enum HookInstaller {
     // MARK: Pure transforms (unit tested)
 
     static func isInstalled(in settings: [String: Any]) -> Bool {
+        hasOurs(coreEvents, in: settings, answer: false)
+    }
+
+    /// Every current event is there (no upgrade needed).
+    static func isCurrent(in settings: [String: Any]) -> Bool {
+        hasOurs(events, in: settings, answer: false)
+    }
+
+    static func isAnswerInstalled(in settings: [String: Any]) -> Bool {
+        hasOurs(answerEvents.map(\.event), in: settings, answer: true)
+    }
+
+    private static func hasOurs(_ events: [String], in settings: [String: Any], answer: Bool) -> Bool {
         guard let hooks = settings["hooks"] as? [String: Any] else { return false }
         return events.allSatisfy { event in
-            (hooks[event] as? [[String: Any]])?.contains(where: isOurs) ?? false
+            (hooks[event] as? [[String: Any]])?.contains { isOurs($0) && isAnswer($0) == answer } ?? false
         }
     }
 
-    static func installing(into settings: [String: Any], command: String) -> [String: Any] {
+    static func installing(into settings: [String: Any], command: String, answers: Bool = false) -> [String: Any] {
         var settings = removing(from: settings)
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         for event in events {
             var groups = hooks[event] as? [[String: Any]] ?? []
             var group: [String: Any] = ["hooks": [["type": "command", "command": command, "timeout": 5]]]
-            if event == "PreToolUse" || event == "PostToolUse" { group["matcher"] = "*" }
+            if ["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest"].contains(event) {
+                group["matcher"] = "*"
+            }
             groups.append(group)
             hooks[event] = groups
+        }
+        if answers {
+            for (event, matcher) in answerEvents {
+                var groups = hooks[event] as? [[String: Any]] ?? []
+                groups.append([
+                    "matcher": matcher,
+                    "hooks": [["type": "command", "command": command + answerArgument, "timeout": answerTimeout]],
+                ])
+                hooks[event] = groups
+            }
         }
         settings["hooks"] = hooks
         return settings
@@ -75,6 +112,12 @@ nonisolated enum HookInstaller {
     private static func isOurs(_ group: [String: Any]) -> Bool {
         (group["hooks"] as? [[String: Any]])?.contains {
             ($0["command"] as? String)?.contains(marker) ?? false
+        } ?? false
+    }
+
+    private static func isAnswer(_ group: [String: Any]) -> Bool {
+        (group["hooks"] as? [[String: Any]])?.contains {
+            ($0["command"] as? String)?.hasSuffix(answerArgument) ?? false
         } ?? false
     }
 
@@ -160,10 +203,28 @@ nonisolated enum HookInstaller {
         (try? isInstalled(in: readSettings())) ?? false
     }
 
+    static var isAnswerInstalled: Bool {
+        (try? isAnswerInstalled(in: readSettings())) ?? false
+    }
+
     static func install() throws {
         try copyHelper()
-        try write(installing(into: readSettings(), command: command))
+        let settings = try readSettings()
+        try write(installing(into: settings, command: command, answers: isAnswerInstalled(in: settings)))
         installerLog.info("installed Claude Code hooks")
+    }
+
+    /// Turns answering from the notch on or off (hooks must be connected).
+    static func setAnswers(_ on: Bool) throws {
+        try copyHelper()
+        try write(installing(into: readSettings(), command: command, answers: on))
+        installerLog.info("answer hooks \(on ? "on" : "off", privacy: .public)")
+    }
+
+    /// An install from an older version gets the events added since.
+    static func upgradeIfNeeded() {
+        guard let settings = try? readSettings(), isInstalled(in: settings), !isCurrent(in: settings) else { return }
+        try? install()
     }
 
     static func uninstall() throws {

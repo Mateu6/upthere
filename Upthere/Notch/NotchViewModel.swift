@@ -157,7 +157,8 @@ final class NotchViewModel {
 
     /// Claude needing you, or a countdown ending, auto-peeks the left ear.
     var effectiveLeftMode: EarMode {
-        leftMode == .collapsed && (claude.attention != nil || timers.alertingID != nil) ? .peek : leftMode
+        let claudeCalls = prefs.claudeEnabled && (claude.attention != nil || claude.justFinishedSession != nil)
+        return leftMode == .collapsed && (claudeCalls || timers.alertingID != nil) ? .peek : leftMode
     }
 
     var isAnyEarOpen: Bool { effectiveLeftMode != .collapsed || rightMode != .collapsed }
@@ -254,7 +255,7 @@ final class NotchViewModel {
         if !timers.isEmpty {
             let left: LeftContent =
                 claude.attention != nil && prefs.claudeEnabled
-                ? .claudeDetail(expanded: false) : l == .collapsed ? .timer : .timerStrip
+                ? .claudeDetail(expanded: l == .expanded) : l == .collapsed ? .timer : .timerStrip
             let musicNow = nowPlaying.isLive || (!sessionsLive && r != .collapsed && nowPlaying.current != nil)
             let right: RightContent
             switch (musicNow, sessionsLive) {
@@ -291,6 +292,7 @@ final class NotchViewModel {
             switch content {
             case .timerStrip: timerStripLimit
             case .claudePiece: timerStripLimit + 340
+            case .claudeDetail where answerShown: Self.answerLimit
             default: nil
             }
         return nudged(clamp(width(content), room: geometry.leftRoom, limit: limit), .left)
@@ -365,11 +367,12 @@ final class NotchViewModel {
     var claudePieceWidth: CGFloat { claudePieceWidth(hovered: claudePieceHovered) }
 
     func claudePieceWidth(hovered: Bool) -> CGFloat {
+        if let answer = answerRowWidth { return answer }
         let cap: CGFloat = nowPlaying.isLive && timers.isEmpty ? 360 : 320
         let session = selectedSession
         // The name as drawn, plus 22 for a "+N" badge.
         var text = TextWidth.of(session?.projectName ?? "", Theme.TextStyle.title)
-        if claude.visibleSessions.count > 1 { text += 22 }
+        if claude.visibleSessions.count > 1 { text += waitingElsewhere != nil ? 32 : 22 }
         if hovered, let session {
             // Hovered: time beside the title, usage after the description.
             let status = min(TextWidth.of(session.statusLine, Theme.TextStyle.body), 140)
@@ -382,7 +385,10 @@ final class NotchViewModel {
     /// Claude's detail hugs its text too: the name when peeking; time,
     /// usage and the buttons when expanded.
     private func claudeDetailWidth(expanded: Bool) -> CGFloat {
-        guard expanded else { return min(claudePieceWidth(hovered: false), 240) }
+        if let answer = answerRowWidth { return answer }
+        // Waiting for you, the peek also has the open-chat button.
+        let open: CGFloat = selectedSession?.needsYou == true ? 28 : 0
+        guard expanded else { return min(claudePieceWidth(hovered: false), 240) + open }
         guard let session = selectedSession else { return 240 }
         // Title + time on top; status (at least 120, it rolls) + usage below.
         let title = TextWidth.of(session.projectName, Theme.TextStyle.title) + 40
@@ -560,7 +566,9 @@ final class NotchViewModel {
         let music = showsMusic(side) || (side == .left && !claudeShown && showsMusic(.right))
             || (side == .right && !claudeShown && showsMusic(.left))
         if music { return musicPalette }
-        switch claude.attention?.activity {
+        // Each chat has its own colour: the one on screen sets the tint.
+        guard let session = selectedSession, session.needsYou else { return Self.claudePalette }
+        switch session.activity {
         case .permission: return Self.attentionPalette
         case .input: return Self.inputPalette
         default: return Self.claudePalette
@@ -574,12 +582,112 @@ final class NotchViewModel {
         }
     }
 
-    /// The session shown in the agent ear.
+    /// When a chat was last picked by hand (buttons, scrolling, the badge).
+    @ObservationIgnored private var selectedAt = Date.distantPast
+
+    /// The session shown in the agent ear. A chat picked by hand stays
+    /// until another one starts needing you: that one always comes first.
     var selectedSession: ClaudeSession? {
         if let id = selectedSessionID, let session = claude.visibleSessions.first(where: { $0.id == id }) {
+            if !session.activity.needsUser,
+                let newer = claude.waiting.first(where: { $0.since > selectedAt })
+            {
+                return newer
+            }
             return session
         }
         return claude.primary
+    }
+
+    /// Another chat waiting for you while a different one is on screen.
+    var waitingElsewhere: ClaudeSession? {
+        let shown = selectedSession?.id
+        return claude.waiting.first { $0.id != shown }
+    }
+
+    func select(_ session: ClaudeSession) {
+        selectedAt = .now
+        selectedSessionID = session.id
+    }
+
+    /// The "+N" badge: jump to the chat that has waited longest.
+    func showWaiting() {
+        guard let session = waitingElsewhere else { return }
+        select(session)
+        if mode(.left) == .collapsed { setMode(.left, .peek) }
+    }
+
+    // MARK: Answering from the notch
+
+    /// The answer row may grow past the usual max ear width: the choices
+    /// must all be there to be picked.
+    static let answerLimit: CGFloat = 560
+
+    /// Where you are in the shown request: which question, what's picked,
+    /// whether the rarer choices are folded out.
+    struct AnswerDraft: Equatable {
+        var requestID: UUID?
+        var step = 0
+        var picked: [String: [String]] = [:]
+        var more = false
+    }
+
+    private(set) var answerDraft = AnswerDraft()
+
+    func draft(for request: ClaudeRequest) -> AnswerDraft {
+        answerDraft.requestID == request.id ? answerDraft : AnswerDraft(requestID: request.id)
+    }
+
+    func updateDraft(for request: ClaudeRequest, _ change: (inout AnswerDraft) -> Void) {
+        var draft = draft(for: request)
+        change(&draft)
+        if answerDraft != draft { answerDraft = draft }
+    }
+
+    /// The shown chat's open request, or what you just answered in it.
+    var shownRequest: ClaudeRequest? { selectedSession.flatMap { claude.requests[$0.id] } }
+    var shownEcho: AnswerEcho? { selectedSession.flatMap { claude.echoes[$0.id] } }
+    var answerShown: Bool { prefs.claudeEnabled && (shownRequest != nil || shownEcho != nil) }
+    /// Two lines need a notch-height ear; shorter menu bars get one line.
+    var answerIsCompact: Bool { unit < 30 }
+
+    /// The answer row hugs its two lines: the question, and the choices.
+    private var answerRowWidth: CGFloat? {
+        guard answerShown, let session = selectedSession else { return nil }
+        let line1: CGFloat
+        let line2: CGFloat
+        if let request = shownRequest {
+            let draft = draft(for: request)
+            line1 = TextWidth.of(ClaudeAnswerRow.title(request, session: session, step: draft.step), Theme.TextStyle.title)
+            line2 = Self.choicesWidth(request, draft: draft)
+        } else {
+            line1 = TextWidth.of(session.projectName, Theme.TextStyle.title)
+            line2 = TextWidth.of(shownEcho?.text ?? "", Theme.TextStyle.label) + 18
+        }
+        // + the spark beside the notch, the edges and the text's fade.
+        let content =
+            answerIsCompact
+            ? min(line1 * 10.5 / 12, AnswerMetrics.compactTitleCap) + 8 + line2 : max(min(line1, 320), line2)
+        return min(unit + 4 + 8 + 10 + content, Self.answerLimit).rounded(.up)
+    }
+
+    static func choicesWidth(_ request: ClaudeRequest, draft: AnswerDraft) -> CGFloat {
+        let icon = AnswerMetrics.iconChip
+        let chips: [CGFloat]
+        switch request.kind {
+        case .questions(let list):
+            let question = list[min(draft.step, list.count - 1)]
+            chips = [icon] + question.options.map { AnswerMetrics.width($0.label) }
+                + (question.multiSelect ? [AnswerMetrics.width("Done")] : [])
+        case .plan:
+            chips = [icon, AnswerMetrics.width("Keep planning"), AnswerMetrics.width("Approve")]
+        case .permission(_, _, let rule):
+            chips =
+                draft.more
+                ? [icon, AnswerMetrics.width("Deny and stop")] + (rule.map { [AnswerMetrics.width("Always allow \($0)")] } ?? [])
+                : [icon, icon, AnswerMetrics.width("Deny"), AnswerMetrics.width("Allow")]
+        }
+        return chips.reduce(0, +) + CGFloat(max(0, chips.count - 1)) * AnswerMetrics.spacing
     }
 
     func usageChips(for session: ClaudeSession?) -> [UsageChip] {
@@ -611,7 +719,7 @@ final class NotchViewModel {
         let line = TextWidth.of(ClaudeToolDetail.primaryLine(session), Theme.TextStyle.title)
         let chips = claudeEarChips(for: session)
         let figures = 34 + chips.reduce(0) { $0 + TextWidth.of($1.text, Theme.TextStyle.chip) + 12 }
-        let icon: CGFloat = if case .tool = session.activity { 18 } else { 0 }
+        let icon: CGFloat = session.activity.symbol != nil ? 18 : 0
         let cap: CGFloat = expanded ? 420 : 340
         return min(8 + icon + max(min(line + 10, cap - 60), figures, 120) + 12, cap).rounded(.up)
     }
@@ -624,7 +732,7 @@ final class NotchViewModel {
         let sessions = claude.visibleSessions
         guard sessions.count > 1 else { return }
         let current = sessions.firstIndex { $0.id == selectedSession?.id } ?? 0
-        selectedSessionID = sessions[(current + offset + sessions.count) % sessions.count].id
+        select(sessions[(current + offset + sessions.count) % sessions.count])
     }
 
     // MARK: Interaction

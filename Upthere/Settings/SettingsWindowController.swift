@@ -26,7 +26,10 @@ final class SettingsWindowController {
         window.center()
     }
 
-    func show() {
+    func show(tab: String? = nil) {
+        if let tab, let index = tabs.tabViewItems.firstIndex(where: { $0.label == tab }) {
+            tabs.selectedTabViewItemIndex = index
+        }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }

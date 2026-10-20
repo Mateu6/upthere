@@ -9,6 +9,11 @@ nonisolated struct TranscriptInfo: Sendable, Equatable {
     /// Tokens this session has processed (input, cache reads/writes and
     /// output), counting each API response once.
     var sessionTokens = 0
+    /// Esc presses seen since tailing began (Claude Code sends no hook for them).
+    var interrupts = 0
+    /// The latest tool results seen since tailing began, newest last: a
+    /// result for the call Claude was waiting on means you answered.
+    var recentToolResults: [String] = []
 }
 
 /// Follows one session's JSONL transcript, reading only appended bytes.
@@ -25,6 +30,8 @@ nonisolated final class TranscriptTailer: @unchecked Sendable {
     private var info = TranscriptInfo()
     /// A response spans several lines (one per content block); count it once.
     private var countedMessages: Set<String> = []
+    /// False during the first read, so old interrupts and results are skipped.
+    private var live = false
 
     /// Read the whole transcript once for session totals (bounded).
     private static let initialTailBytes: off_t = 96 * 1024 * 1024
@@ -53,7 +60,10 @@ nonisolated final class TranscriptTailer: @unchecked Sendable {
         let size = lseek(fd, 0, SEEK_END)
         offset = max(0, size - Self.initialTailBytes)
         let skipFirstLine = offset > 0
+        // History says nothing about the turn in progress.
+        live = false
         readAppended(skipFirstLine: skipFirstLine)
+        live = true
 
         let fd = self.fd
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -91,6 +101,7 @@ nonisolated final class TranscriptTailer: @unchecked Sendable {
         while let newline = partial.firstIndex(of: 0x0A) {
             let line = partial[partial.startIndex..<newline]
             Self.apply(line: Data(line), to: &info, counted: &countedMessages)
+            if live { Self.applySignals(line: Data(line), to: &info) }
             partial.removeSubrange(partial.startIndex...newline)
         }
         if partial.count > 32 * 1024 * 1024 { partial.removeAll() }
@@ -100,6 +111,27 @@ nonisolated final class TranscriptTailer: @unchecked Sendable {
     private static let assistantMarker = Data(#""type":"assistant""#.utf8)
     private static let titleMarker = Data(#""type":"custom-title""#.utf8)
     private static let agentNameMarker = Data(#""type":"agent-name""#.utf8)
+
+    private static let userMarker = Data(#""type":"user""#.utf8)
+    private static let sidechainMarker = Data(#""isSidechain":true"#.utf8)
+    private static let interruptMarker = Data("[Request interrupted by user".utf8)
+    private static let toolResultMarker = Data(#""type":"tool_result""#.utf8)
+    private static let toolUseIDMarker = Data(#""tool_use_id":""#.utf8)
+
+    /// Interrupts and tool results on the main chain, by byte search only
+    /// (tool results can be large).
+    static func applySignals(line: Data, to info: inout TranscriptInfo) {
+        guard line.range(of: userMarker) != nil, line.range(of: sidechainMarker) == nil else { return }
+        if line.range(of: interruptMarker) != nil { info.interrupts += 1 }
+        guard line.range(of: toolResultMarker) != nil else { return }
+        var searchStart = line.startIndex
+        while let marker = line.range(of: toolUseIDMarker, in: searchStart..<line.endIndex) {
+            guard let end = line[marker.upperBound...].firstIndex(of: UInt8(ascii: "\"")) else { break }
+            info.recentToolResults.append(String(decoding: line[marker.upperBound..<end], as: UTF8.self))
+            searchStart = end
+        }
+        if info.recentToolResults.count > 16 { info.recentToolResults.removeFirst(info.recentToolResults.count - 16) }
+    }
 
     /// Cheap byte search before JSON parsing: most lines (tool results,
     /// file contents) are irrelevant and can be large.
