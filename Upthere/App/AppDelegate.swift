@@ -10,9 +10,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) lazy var claude = ClaudeModel()
     private(set) lazy var queue = QueueModel(prefs: prefs)
     private(set) lazy var timers = TimerModel()
+    private(set) lazy var reminders = RemindersModel(store: ReminderStore())
     let calendar = CalendarLogger()
     private var hotKey: HotKey?
+    private var reminderHotKey: HotKey?
     private var timerInput: TimerInputController?
+    private var reminderInput: ReminderInputController?
     private var notch: NotchWindowController?
     private var settings: SettingsWindowController?
     private var signalSources: [DispatchSourceSignal] = []
@@ -35,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncClaudePreferences()
         syncVisualizer()
         setUpTimers()
+        setUpReminders()
         updater.start()
 
         notch = NotchWindowController(
@@ -43,9 +47,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             prefs: prefs,
             queue: queue,
             timers: timers,
+            reminders: reminders,
             actions: NotchActions(
                 openSettings: { [weak self] in self?.showSettings() },
                 openTimerInput: { [weak self] in self?.timerInput?.show() },
+                openReminderInput: { [weak self] in self?.reminderInput?.show() },
                 checkForUpdates: { [weak self] in self?.updater.checkForUpdates() },
                 quit: { NSApp.terminate(nil) }
             )
@@ -102,6 +108,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey?.register(preset)
     }
 
+    private func setUpReminders() {
+        reminderInput = ReminderInputController(reminders: reminders, prefs: prefs) { [weak self] in
+            self?.notch?.geometry
+        }
+        reminderHotKey = HotKey { [weak self] in self?.reminderInput?.toggle() }
+        syncReminderHotKey()
+    }
+
+    private func syncReminderHotKey() {
+        let preset = withObservationTracking { prefs.reminderHotKey } onChange: { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncReminderHotKey() } }
+        }
+        reminderHotKey?.register(preset)
+    }
+
     /// Taps the player's audio only while music plays with the live
     /// visualizer on and live sound bars are on screen. When the bars go
     /// away (e.g. the ear switches to the cover) the tap stops after a short
@@ -145,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settings == nil {
             settings = SettingsWindowController(
                 prefs: prefs, nowPlaying: nowPlaying, claude: claude, queue: queue, calendar: calendar,
-                updater: updater)
+                reminders: reminders, updater: updater)
         }
         settings?.show(tab: tab)
     }

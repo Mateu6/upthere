@@ -193,7 +193,7 @@ struct ClaudeDetail: View {
                         text: statusLine, font: Theme.TextStyle.body.font, color: statusColor,
                         alignment: .trailing, scrubber: model.leftStatusScrub)
                     if expanded {
-                        let chips = model.usageChips(for: session)
+                        let chips = model.detailChips(for: session)
                         if !chips.isEmpty {
                             Text("·").font(Theme.TextStyle.body.font).foregroundStyle(Theme.secondary)
                             UsageChipsView(chips: chips).fixedSize()
@@ -305,7 +305,7 @@ struct ClaudePiece: View {
                     text: session.statusLine, font: Theme.TextStyle.body.font, color: session.statusColor,
                     alignment: .trailing, hugs: true, scrubber: model.leftStatusScrub)
                 if hovering {
-                    let chips = model.usageChips(for: session)
+                    let chips = model.pieceChips(for: session)
                     if !chips.isEmpty {
                         Group {
                             Text("·").font(Theme.TextStyle.body.font).foregroundStyle(Theme.secondary)
