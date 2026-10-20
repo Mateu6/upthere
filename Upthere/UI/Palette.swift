@@ -113,8 +113,10 @@ extension Theme {
 
     /// Claude needs permission.
     static let permissionTone = OKLCH(statusL, statusC, 75)
-    /// Claude is asking you something.
-    static let inputTone = OKLCH(statusL, statusC, 255)
+    /// Claude is asking you something: the same yellow as a permission,
+    /// like the Claude app's "needs your input" dot. The ✋ / ? marks tell
+    /// the two apart, so colour is never the only signal.
+    static let inputTone = permissionTone
     /// Finished.
     static let successTone = OKLCH(statusL, statusC, 150)
     /// A limit is nearly used up.

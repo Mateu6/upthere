@@ -32,3 +32,4 @@ Severity: broken · dead (dead end) · missing (branch) · friction. Full wordin
 - L9: answering in the notch clears the wait at once. For terminal answers: going to the session's window and leaving it softens the wait to "Answered in terminal?" (grey, no peek, ✋ kept).
 - L16: no app recorded and no tty → a beep instead of guessing Terminal; an app that quit is reopened.
 - L17: first launch with ~/.claude present and no hooks opens Settings → Claude once.
+- 2026-10-20 (Mateusz, from a screenshot): "the background here is not matching the status" and "the question to me should have yellow color just like claude yellow dot in the app". Now: questions use the same yellow as permissions (marks ✋ / ? tell them apart); the tint always follows the status; the L9 "Answered in terminal?" softening only applies to terminal sessions (being in the Claude app doesn't mean you saw that chat) and no longer changes colours.

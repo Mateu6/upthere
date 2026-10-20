@@ -252,7 +252,10 @@ final class ClaudeModel {
 
     /// Going to a waiting session's app, then leaving it, softens the wait.
     private func appActivated(_ bundle: String?) {
-        for index in sessions.indices where sessions[index].activity.needsUser && !sessions[index].waitSeen {
+        // Terminal sessions only: being in the Claude app doesn't mean you
+        // looked at that chat.
+        for index in sessions.indices
+        where sessions[index].activity.needsUser && !sessions[index].waitSeen && Self.desktopURL(for: sessions[index]) == nil {
             if Self.appBundleID(for: sessions[index]) == bundle {
                 sessions[index].waitVisited = true
             } else if sessions[index].waitVisited {

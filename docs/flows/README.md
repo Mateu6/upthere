@@ -22,9 +22,11 @@ Decision page: https://claude.ai/artifact/UCeTrZnaZMYiMGv4SyVnXa
 | 07 Connect hooks | fixed | E1 · E2 · E3 onboarding once · answer toggle on/off · upgrade at launch | ✓ | ✗ (would edit real settings.json) | `AnswerInstallerTests`, `HookInstallerTests` |
 
 Shots: `shots/02-answer-*`, `03-answer-*`, `05-fixed-*`, `01-fixed-*` (Aurora, Glass, Classic; notchless via the debug switch, whose capture clips the top few points).
-Not walked: real Claude Code end to end (Settings toggle on, a real AskUserQuestion), clicking chips by pointer (driven through DebugBridge `answer:*`), jump-to-chat endings.
+Live-tested 2026-10-20: real AskUserQuestion from Claude Code in Terminal, answered by clicking in the notch (works). Not walked: a real question from the Claude desktop app, real permission and plan requests, clicking chips by pointer (driven through DebugBridge `answer:*`), jump-to-chat endings.
 
 ## Decisions log
 - 2026-10-19: answer from the notch: option questions, Allow/Deny, plan approval. Notch first, then the terminal after a timeout (default 20 s) or "Answer in terminal"; never waits when the session's window is in front.
 - 2026-10-19: each session's colour comes from the status of the conversation on screen.
 - 2026-10-19: all 17 loose ends picked Fix; L2 "fix differently": always prioritize the one that needs me.
+- 2026-10-20: answer hook installed in ~/.claude/settings.json; live question test passed.
+- 2026-10-20: questions and permissions share the Claude app's yellow; tint always follows the status.

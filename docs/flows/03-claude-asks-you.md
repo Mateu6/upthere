@@ -30,3 +30,5 @@
 ## After fixes (2026-10-19)
 | E4 | success | **built:** options one question at a time (multi-select + Done), plan Approve / Keep planning | flow 01 | walked |
 | E5 | handed over | wait ran out, or ↗ | terminal | walked |
+
+- 2026-10-20: **live-tested** with real Claude Code in Terminal (2 questions); Mateusz picked both in the notch and Claude Code received them ("User answered Claude's questions → Circle"). Shot: `shots/03-live-1-real-question.png`.

@@ -228,13 +228,12 @@ extension ClaudeSession {
     var statusLine: String {
         switch activity {
         case .tool(_, let detail?), .permission(_, let detail?): return "\(statusText) · \(detail)"
-        case .input(let prompt?): return prompt
+        case .input(let prompt?) where !waitSeen: return prompt
         default: return statusText
         }
     }
 
     var statusColor: Color {
-        guard needsYou || !activity.needsUser else { return Theme.secondary }
         return switch activity {
         case .permission: Color(nsColor: Theme.amber)
         case .input: Color(nsColor: Theme.input)
