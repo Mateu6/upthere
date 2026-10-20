@@ -28,10 +28,12 @@
 	<true/>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Finished timers are added to the calendar you choose, so your day's work log ends up in Calendar.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Reminders you add with ⌥⌘R go to the list you pick, and the ones you pin stay beside the notch until they're done.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>The live visualizer reads the music player's audio to animate the sound bars. Nothing is recorded or stored.</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Upthere controls Spotify and Music directly so play/pause always reaches your music player, not a browser tab.</string>
+	<string>Upthere controls Spotify and Music directly so play/pause always reaches your music player, not a browser tab. It also asks Reminders to flag the reminders you flag.</string>
 	<key>SUFeedURL</key>
 	<string>https://github.com/Mateu6/upthere/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>

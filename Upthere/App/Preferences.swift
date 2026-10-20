@@ -198,6 +198,13 @@ final class Preferences {
     var timerSound: Bool { didSet { save(timerSound, "timerSound") } }
     var infoAutoCompact: Bool { didSet { save(infoAutoCompact, "infoAutoCompact") } }
 
+    // Reminders
+    var reminderHotKey: HotKey.ReminderPreset { didSet { save(reminderHotKey.rawValue, "reminderHotKey") } }
+    /// Where new reminders go; nil = Reminders' default list.
+    var reminderListID: String? { didSet { save(reminderListID, "reminderListID") } }
+    /// The field's "Pin to notch" switch, as last left.
+    var reminderPin: Bool { didSet { save(reminderPin, "reminderPin") } }
+
     /// The 7-day local token count is only computed when it's displayed.
     var needsWeeklyTokenScan: Bool { infoWeek && infoWeekFormat == .amount }
 
@@ -255,6 +262,10 @@ final class Preferences {
         timerCalendarID = defaults.string(forKey: "timerCalendarID")
         timerKeepShort = defaults.object(forKey: "timerKeepShort") as? Bool ?? false
         timerSound = defaults.object(forKey: "timerSound") as? Bool ?? true
+        reminderHotKey =
+            HotKey.ReminderPreset(rawValue: defaults.string(forKey: "reminderHotKey") ?? "") ?? .optionCommandR
+        reminderListID = defaults.string(forKey: "reminderListID")
+        reminderPin = defaults.object(forKey: "reminderPin") as? Bool ?? false
     }
 
     private func save(_ value: Any?, _ key: String) {

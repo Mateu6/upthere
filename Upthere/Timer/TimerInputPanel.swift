@@ -1,79 +1,26 @@
 import AppKit
 import SwiftUI
 
-/// A panel that can take keyboard focus without activating Upthere, so
-/// typing a timer doesn't pull you out of the app you're in.
-private final class KeyPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
-
 /// The small field under the notch for starting timers (and seeing the
 /// running ones). Opened with the global shortcut or the notch's + button.
-final class TimerInputController: NSObject, NSWindowDelegate {
-    private let panel: KeyPanel
+final class TimerInputController {
+    private let panel: NotchFieldPanel
     private let timers: TimerModel
-    private let geometry: () -> NotchGeometry?
 
     init(timers: TimerModel, geometry: @escaping () -> NotchGeometry?) {
         self.timers = timers
-        self.geometry = geometry
-        panel = KeyPanel(
-            contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
-            backing: .buffered, defer: true)
-        super.init()
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 2)
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = false
-        panel.delegate = self
+        panel = NotchFieldPanel(geometry: geometry)
     }
 
-    var isOpen: Bool { panel.isVisible }
+    var isOpen: Bool { panel.isOpen }
 
     func toggle() { isOpen ? close() : show() }
 
     func show() {
-        let host = NSHostingController(rootView: TimerInputView(timers: timers, close: { [weak self] in self?.close() }))
-        host.sizingOptions = .preferredContentSize
-        panel.contentViewController = host
-        position()
-        panel.makeKeyAndOrderFront(nil)
+        panel.show(TimerInputView(timers: timers, close: { [weak self] in self?.close() }))
     }
 
-    func close() {
-        panel.orderOut(nil)
-        panel.contentViewController = nil
-    }
-
-    /// Centered under the notch, top-anchored as its height changes.
-    private func position() {
-        guard let g = geometry() else { return }
-        let size = panel.contentViewController?.preferredContentSize ?? NSSize(width: 400, height: 80)
-        let origin = NSPoint(
-            x: g.notchRect.midX - size.width / 2,
-            y: g.screenFrame.maxY - g.height - 10 - size.height)
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
-    }
-
-    func windowDidResize(_ notification: Notification) {
-        // Keep the top edge just under the notch.
-        guard let g = geometry() else { return }
-        var frame = panel.frame
-        let top = g.screenFrame.maxY - g.height - 10
-        if abs(frame.maxY - top) > 0.5 {
-            frame.origin.y = top - frame.height
-            panel.setFrameOrigin(frame.origin)
-        }
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        close()
-    }
+    func close() { panel.close() }
 }
 
 struct TimerInputView: View {
@@ -213,36 +160,5 @@ struct TimerInputView: View {
     private func start() {
         guard !parsed.label.isEmpty, timers.start(text) != nil else { return }
         close()
-    }
-}
-
-/// Small icon buttons in the timer field: a soft rounded highlight fades in
-/// under the pointer.
-private struct PanelIconButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 3)
-            .buttonStyle(.plain)
-            .modifier(RowHover(pressed: configuration.isPressed))
-    }
-
-    private struct RowHover: ViewModifier {
-        let pressed: Bool
-        @State private var hovering = false
-
-        func body(content: Content) -> some View {
-            content
-                .background {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(.primary.opacity(pressed ? Theme.Ink.pressedOpacity : hovering ? Theme.Ink.hoverOpacity : 0))
-                }
-                .scaleEffect(pressed ? 0.94 : 1)
-                .contentShape(Rectangle())
-                .onHover { hovering = $0 }
-                .animation(.spring(duration: 0.2, bounce: 0), value: pressed)
-                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
-        }
     }
 }

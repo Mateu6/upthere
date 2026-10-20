@@ -12,8 +12,10 @@ final class NotchViewModel {
     let prefs: Preferences
     let queue: QueueModel
     let timers: TimerModel
+    let reminders: RemindersModel
     @ObservationIgnored var openSettings: () -> Void = {}
     @ObservationIgnored var openTimerInput: () -> Void = {}
+    @ObservationIgnored var openReminderInput: () -> Void = {}
 
     var geometry: NotchGeometry
     private(set) var leftMode: EarMode = .collapsed
@@ -44,13 +46,14 @@ final class NotchViewModel {
 
     init(
         nowPlaying: NowPlayingModel, claude: ClaudeModel, prefs: Preferences, geometry: NotchGeometry,
-        queue: QueueModel? = nil, timers: TimerModel? = nil
+        queue: QueueModel? = nil, timers: TimerModel? = nil, reminders: RemindersModel? = nil
     ) {
         self.nowPlaying = nowPlaying
         self.claude = claude
         self.prefs = prefs
         self.queue = queue ?? QueueModel(prefs: prefs)
         self.timers = timers ?? TimerModel(defaults: UserDefaults(suiteName: "upthere.preview") ?? .standard)
+        self.reminders = reminders ?? RemindersModel(defaults: UserDefaults(suiteName: "upthere.preview") ?? .standard)
         self.geometry = geometry
         observeTrack()
     }
@@ -127,8 +130,11 @@ final class NotchViewModel {
 
     // MARK: State used by the extensions
 
-    /// The timer chip under the pointer, which shows its buttons.
-    var hoveredTimerID: UUID?
+    /// The strip chip showing its buttons: the one the pointer rested on.
+    var hoveredChip: TrayChip?
+    /// The chip under the pointer right now (it may just be passing over).
+    @ObservationIgnored var pointedChip: TrayChip?
+    @ObservationIgnored var chipSettleTask: Task<Void, Never>?
 
     /// The pointer is on Claude's piece: it widens to fit time and usage.
     /// A chat picked by scrolling goes back to the most active one a little
