@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Hovering, clicking and the pointer monitors that open and close ears.
 extension NotchViewModel {
@@ -28,6 +29,48 @@ extension NotchViewModel {
     /// outer piece opens the ear.
     func overInnerPiece(_ side: NotchSide, distance: CGFloat) -> Bool {
         mode(side) == .collapsed && innerPieceWidth(side).map { distance < $0 } == true
+    }
+
+    /// A strip chip shows its buttons once the pointer rests on it. Sweeping
+    /// across the strip changes nothing: whichever chip is open stays open
+    /// until the pointer settles on another (they swap in one move) or
+    /// leaves the chips (it folds away).
+    func hoverChip(_ chip: TrayChip, inside: Bool) {
+        if inside {
+            pointedChip = chip
+        } else if pointedChip == chip {
+            pointedChip = nil
+        }
+        chipSettleTask?.cancel()
+        guard pointedChip != hoveredChip else { return }
+        let delay: Duration = pointedChip == nil ? Self.chipLeaveDelay : Self.chipRestDelay
+        chipSettleTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.hoveredChip != self.pointedChip else { return }
+            self.showButtons(of: self.pointedChip)
+        }
+    }
+
+    /// One move for the whole strip: the old chip's buttons fold, the new
+    /// one's open and every chip beyond them slides, all on the same spring
+    /// the ear's mask picks for that change (opening when the strip grows).
+    private func showButtons(of chip: TrayChip?) {
+        let opening = chipButtonsWidth(chip) >= chipButtonsWidth(hoveredChip)
+        withAnimation(Theme.earSpring(opening: opening)) { hoveredChip = chip }
+    }
+
+    /// How long the pointer rests on a chip before its buttons open: longer
+    /// than a fast sweep spends crossing one.
+    static let chipRestDelay: Duration = .milliseconds(180)
+    /// How long after leaving the chips the open one folds away.
+    static let chipLeaveDelay: Duration = .milliseconds(250)
+
+    /// A chip that went away (its ear closed, or it was stopped) shows nothing.
+    func chipGone(_ chip: TrayChip) {
+        if pointedChip == chip { pointedChip = nil }
+        guard hoveredChip == chip else { return }
+        chipSettleTask?.cancel()
+        showButtons(of: nil)
     }
 
     // MARK: Interaction

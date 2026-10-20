@@ -10,7 +10,7 @@ final class SettingsWindowController {
 
     init(
         prefs: Preferences, nowPlaying: NowPlayingModel, claude: ClaudeModel, queue: QueueModel,
-        calendar: CalendarLogger, updater: Updater
+        calendar: CalendarLogger, reminders: RemindersModel, updater: Updater
     ) {
         tabs.tabStyle = .toolbar
         tabs.transitionOptions = [.crossfade, .allowUserInteraction]
@@ -19,6 +19,7 @@ final class SettingsWindowController {
         Self.add("Music", symbol: "music.note", MusicSettings(prefs: prefs, queue: queue), to: tabs)
         Self.add("Claude", symbol: "sparkle", ClaudeSettings(prefs: prefs, claude: claude), to: tabs)
         Self.add("Timers", symbol: "timer", TimerSettings(prefs: prefs, calendar: calendar), to: tabs)
+        Self.add("Reminders", symbol: "checklist", ReminderSettings(prefs: prefs, reminders: reminders), to: tabs)
 
         window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]

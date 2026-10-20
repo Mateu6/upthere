@@ -61,31 +61,33 @@ extension NotchViewModel {
             let musicNow = nowPlaying.isLive
             // Claude needing you shows in its piece rather than opening the ear.
             let lo: EarMode = l == .collapsed ? .collapsed : leftMode
-            if musicNow && !timers.isEmpty && prefs.centerPiece == .music {
+            if musicNow && !trayIsEmpty && prefs.centerPiece == .music {
                 let left: LeftContent = lo == .collapsed ? .claudePiece(timers: .none) : .claudeDetail(expanded: true)
                 return (left, .musicWithTimers(strip: r != .collapsed))
             }
             let left: LeftContent =
-                timers.isEmpty
+                trayIsEmpty
                 ? (lo == .collapsed ? .claudePiece(timers: .none) : .claudeDetail(expanded: true))
                 : .claudePiece(timers: lo == .collapsed ? .collapsed : .strip)
             if musicNow { return (left, .musicFull(expanded: false)) }
-            if !timers.isEmpty { return (left, .none) }
+            if !trayIsEmpty { return (left, .none) }
             return (left, r == .collapsed ? .claudeBadge : .claudeTool(expanded: r == .expanded))
         }
 
-        // Timers take the left ear (Claude needing you still overrides).
-        // Music then lives entirely in the right ear; Claude without music
-        // keeps the right ear, and appears as a chip in the timer strip.
-        if !timers.isEmpty {
+        // Timers and pinned reminders take the left ear (Claude needing you
+        // still overrides). Music then lives entirely in the right ear;
+        // Claude without music keeps the right ear, and appears as a chip
+        // in the strip.
+        if !trayIsEmpty {
             let left: LeftContent =
                 claude.attention != nil && prefs.claudeEnabled
                 ? .claudeDetail(expanded: l == .expanded) : l == .collapsed ? .timer : .timerStrip
             let musicNow = nowPlaying.isLive || (!sessionsLive && r != .collapsed && nowPlaying.current != nil)
             let right: RightContent
             switch (musicNow, sessionsLive) {
-            case (true, false): right = rm == .collapsed ? .musicBars : .musicControls(expanded: rm == .expanded)
-            case (true, true): right = rm == .collapsed ? .musicCompact : .musicFull(expanded: rm == .expanded)
+            // The cover is music's anchor here: with the left ear taken, a
+            // lone set of bars would say nothing about what's playing.
+            case (true, _): right = rm == .collapsed ? .musicCompact : .musicFull(expanded: rm == .expanded)
             case (false, true): right = r == .collapsed ? .claudeBadge : .claudeTool(expanded: r == .expanded)
             case (false, false): right = .none
             }
@@ -109,6 +111,9 @@ extension NotchViewModel {
             return (claudeLeft, rm == .collapsed ? .musicCompact : .musicFull(expanded: rm == .expanded))
         }
     }
+
+    /// Nothing to show in the timers' place: no timers, no pinned reminders.
+    var trayIsEmpty: Bool { timers.isEmpty && reminders.pinned.isEmpty }
 
     /// Up Next: the right ear of a music-only notch, when open.
     var showsQueue: Bool { content.left == .queue }

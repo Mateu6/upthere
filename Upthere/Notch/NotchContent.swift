@@ -18,8 +18,9 @@ enum LeftContent: Hashable {
     case musicInfo(expanded: Bool)
     /// Up Next (music-only): upcoming songs beside the cover.
     case queue
-    /// Timers own the left ear while any run: the urgent one collapsed,
-    /// all of them (plus Claude) as a strip when open.
+    /// Timers and pinned reminders (the tray) own the left ear while there
+    /// are any: the urgent ones collapsed, all of them (plus Claude) as a
+    /// strip when open.
     case timer
     case timerStrip
     case claudeGlyph
@@ -27,6 +28,12 @@ enum LeftContent: Hashable {
     /// Screens without a notch: Claude's piece next to the notch, with the
     /// timers (if any) further out.
     case claudePiece(timers: TimerPart)
+}
+
+/// A chip in the timer strip that can show its buttons.
+enum TrayChip: Hashable {
+    case timer(UUID)
+    case reminder(String)
 }
 
 /// The timers' share of a combined ear on a screen without a notch.
@@ -53,6 +60,7 @@ enum RightContent: Hashable {
 struct NotchActions {
     var openSettings: () -> Void
     var openTimerInput: () -> Void
+    var openReminderInput: () -> Void
     var checkForUpdates: () -> Void
     var quit: () -> Void
 }

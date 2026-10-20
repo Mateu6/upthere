@@ -10,13 +10,22 @@ extension NotchViewModel {
             case .timerStrip: timerStripLimit
             case .claudePiece: timerStripLimit + 340
             case .claudeDetail where answerShown: Self.answerLimit
+            // The pref caps the rolling text, never the controls beside it;
+            // the ceiling caps everything.
+            case .claudeDetail(let expanded):
+                min(max(CGFloat(prefs.maxEarWidth), claudeDetailMinimum(expanded: expanded)), claudeEarCeiling)
             default: nil
             }
         return nudged(clamp(width(content), room: geometry.leftRoom, limit: limit), .left)
     }
     var rightWidth: CGFloat {
         let content = content.right
-        let limit: CGFloat? = if case .musicWithTimers = content { timerStripLimit + 260 } else { nil }
+        let limit: CGFloat? =
+            switch content {
+            case .musicWithTimers: timerStripLimit + 260
+            case .claudeTool: min(max(CGFloat(prefs.maxEarWidth), claudeToolMinimum), claudeEarCeiling)
+            default: nil
+            }
         return nudged(clamp(width(content), room: geometry.rightRoom, limit: limit), .right)
     }
 
@@ -63,7 +72,7 @@ extension NotchViewModel {
 
     func claudePieceWidth(hovered: Bool) -> CGFloat {
         if let answer = answerRowWidth { return answer }
-        let cap: CGFloat = nowPlaying.isLive && timers.isEmpty ? 360 : 320
+        let cap = claudePieceCap
         let session = selectedSession
         // The name as drawn, plus 22 for a "+N" badge.
         var text = TextWidth.of(session?.projectName ?? "", Theme.TextStyle.title)
@@ -77,26 +86,102 @@ extension NotchViewModel {
         return (chrome + min(max(text, 96), cap - chrome)).rounded()
     }
 
+    var claudePieceCap: CGFloat { nowPlaying.isLive && trayIsEmpty ? 360 : 320 }
+
+    /// The hovered piece's figures that fit beside a little rolling status.
+    func pieceChips(for session: ClaudeSession) -> [UsageChip] {
+        let room = claudePieceCap - (unit + 4 + 12 + 10) - 60
+        return fitting(usageChips(for: session), room: room - 8 - TextWidth.of("·", Theme.TextStyle.body))
+    }
+
     /// Claude's detail hugs its text too: the name when peeking; time,
-    /// usage and the buttons when expanded.
+    /// usage and the buttons when expanded. With no chat, it's the plan
+    /// usage, the same size hovered or clicked (there is nothing more).
     func claudeDetailWidth(expanded: Bool) -> CGFloat {
         if let answer = answerRowWidth { return answer }
-        // Waiting for you, the peek also has the open-chat button.
-        let open: CGFloat = selectedSession?.needsYou == true ? 28 : 0
-        guard expanded else { return min(claudePieceWidth(hovered: false), 240) + open }
-        guard let session = selectedSession else { return 240 }
-        // Title + time on top; status (at least 120, it rolls) + usage below.
-        let title = TextWidth.of(session.projectName, Theme.TextStyle.title) + 40
-        let chips = usageChips(for: session)
-        let usage = chips.isEmpty ? 0 : 12 + chips.reduce(0) { $0 + TextWidth.of($1.text, Theme.TextStyle.chip) + 6 }
-        let status = min(TextWidth.of(session.statusLine, Theme.TextStyle.body), 160) + usage
-        let buttons: CGFloat = 28 + (claude.visibleSessions.count > 1 ? 48 : 0)
-        return min(unit + 4 + 22 + max(title, status, 120) + buttons, 420).rounded()
+        guard let session = selectedSession else { return usageSummaryWidth }
+        let edges = 8 + unit + 4
+        guard expanded else {
+            // Waiting for you, the peek also has the open-chat button.
+            let open = session.needsYou ? Self.detailButtons(1) : 0
+            return min(claudePieceWidth(hovered: false), 240) + open
+        }
+        // Title + time on top; status (it rolls, so capped) + usage below.
+        let top = TextWidth.of(session.projectName, Theme.TextStyle.title) + 4 + elapsedWidth(session)
+        let bottom = min(TextWidth.of(session.statusLine, Theme.TextStyle.body), 160) + usageTailWidth(for: session)
+        let text = max(top, bottom, 120)
+        return min(edges + detailButtonsWidth + text, claudeEarCeiling).rounded(.up)
+    }
+
+    /// The widest a Claude ear gets, however much it has to say. Usage
+    /// figures that don't fit drop from the end rather than widen it.
+    var claudeEarCeiling: CGFloat { max(CGFloat(prefs.maxEarWidth), 420) }
+
+    /// The figures after the detail's status line: as many as fit beside
+    /// its buttons and a little rolling status.
+    func detailChips(for session: ClaudeSession) -> [UsageChip] {
+        let room = claudeEarCeiling - (8 + unit + 4 + detailButtonsWidth + 60)
+        return fitting(usageChips(for: session), room: room - 8 - TextWidth.of("·", Theme.TextStyle.body))
+    }
+
+    /// The right ear's figures that fit beside its time.
+    func toolChips(for session: ClaudeSession) -> [UsageChip] {
+        let room = claudeEarCeiling - claudeToolChrome(session) - elapsedWidth(session)
+        return fitting(claudeEarChips(for: session), room: room - 8 - TextWidth.of("·", Theme.TextStyle.body))
+    }
+
+    /// The leading chips that fit in `room`; the last ones go first.
+    func fitting(_ chips: [UsageChip], room: CGFloat) -> [UsageChip] {
+        var chips = chips
+        while !chips.isEmpty && chipsWidth(chips) > room { chips.removeLast() }
+        return chips
+    }
+
+    /// The least the detail can be: its buttons, time and usage figures
+    /// whole, and a little of the rolling name and status beside them.
+    func claudeDetailMinimum(expanded: Bool) -> CGFloat {
+        guard let session = selectedSession else { return usageSummaryWidth }
+        guard expanded else { return 0 }
+        let figures = max(elapsedWidth(session) + 4, usageTailWidth(for: session))
+        return (8 + unit + 4 + detailButtonsWidth + figures + 60).rounded(.up)
+    }
+
+    /// Open chat, plus the chat pager when there are several: 20 pt
+    /// buttons 8 apart, and the spacing either side of the spacer.
+    var detailButtonsWidth: CGFloat { Self.detailButtons(claude.visibleSessions.count > 1 ? 3 : 1) }
+
+    static func detailButtons(_ count: Int) -> CGFloat { CGFloat(count) * 28 + 8 }
+
+    /// No chat, just the plan: "Claude Pro" over its limits.
+    var usageSummaryWidth: CGFloat {
+        let title = TextWidth.of(claude.planName.map { "Claude \($0)" } ?? "Claude", Theme.TextStyle.title)
+        let chips = chipsWidth(usageChips(for: nil))
+        return (8 + max(title, chips) + 4 + unit + 4).rounded(.up)
+    }
+
+    /// The turn's elapsed time as drawn; sized for its digit count so the
+    /// ear doesn't twitch every second.
+    func elapsedWidth(_ session: ClaudeSession) -> CGFloat {
+        let elapsed = Date.now.timeIntervalSince(session.turnStarted ?? session.since)
+        return TextWidth.of(elapsed >= 3600 ? "0:00:00" : "00:00", Theme.TextStyle.figure)
+    }
+
+    /// " · 5h 12% · week 40%" after a status line, or nothing.
+    func usageTailWidth(for session: ClaudeSession) -> CGFloat {
+        let chips = detailChips(for: session)
+        return chips.isEmpty ? 0 : 8 + TextWidth.of("·", Theme.TextStyle.body) + chipsWidth(chips)
+    }
+
+    /// A row of usage chips as `UsageChipsView` draws it.
+    func chipsWidth(_ chips: [UsageChip]) -> CGFloat {
+        guard !chips.isEmpty else { return 0 }
+        let dots = CGFloat(chips.count - 1) * (8 + TextWidth.of("·", Theme.TextStyle.chip))
+        return chips.reduce(dots) { $0 + TextWidth.of($1.text, Theme.TextStyle.chip) }
     }
 
     /// Elapsed time plus usage chips, as drawn.
     func usageLineWidth(for session: ClaudeSession) -> CGFloat {
-        let chips = usageChips(for: session)
+        let chips = pieceChips(for: session)
         return 30 + (chips.isEmpty ? 0 : 12 + chips.reduce(0) { $0 + TextWidth.of($1.text, Theme.TextStyle.chip) + 6 })
     }
 
@@ -151,7 +236,12 @@ extension NotchViewModel {
             }
             return unit * 0.5 + 4 + CGFloat(text.count) * 7.4
         }
-        let badge: CGFloat = timers.hiddenCount > 0 ? 10 + CGFloat("+\(timers.hiddenCount)".count) * 7 : 0
+            + reminders.collapsedReminders.map { item in
+                ReminderMetrics.collapsedCheck(unit: unit) + 4
+                    + min(TextWidth.of(item.title, Theme.TextStyle.label), ReminderMetrics.collapsedText)
+            }
+        let hidden = timers.hiddenCount + reminders.hiddenCount
+        let badge: CGFloat = hidden > 0 ? 10 + CGFloat("+\(hidden)".count) * 7 : 0
         let spark: CGFloat = showsSpark && prefs.claudeEnabled && claude.primary?.activity.isWorking == true ? 17 : 0
         let spacing = CGFloat(max(0, items.count - 1)) * 8
         // Padding on both sides plus a little slack for a longer time.
@@ -165,12 +255,23 @@ extension NotchViewModel {
     func timerStripWidth(claudeChip showsClaude: Bool) -> CGFloat {
         let chip = unit + 92
         let claudeChip: CGFloat = showsClaude && prefs.claudeEnabled && claude.primary != nil ? chip + 6 : 0
-        let add: CGFloat = timers.timers.count < TimerModel.maxTimers ? 30 : 0
+        let add: CGFloat = (timers.timers.count < TimerModel.maxTimers ? 30 : 0) + (reminders.isAuthorized ? 30 : 0)
         // A hovered chip shows its buttons (pin, pause, +5, stop); the
         // strip grows to fit them rather than keeping room spare.
-        let buttons: CGFloat = hoveredTimerID.flatMap { id in timers.timers.first { $0.id == id } }
-            .map { $0.isCountdown ? 84 : 64 } ?? 0
-        return 12 + claudeChip + CGFloat(timers.timers.count) * (chip + 6) + add + buttons + 8
+        let buttons = chipButtonsWidth(hoveredChip)
+        // Reminder chips: check, text column, padding.
+        let reminderChip = 7 + ReminderMetrics.chipCheck(unit: unit) + 6 + ReminderMetrics.chipText + 6
+        let reminderChips = CGFloat(reminders.pinned.count) * (reminderChip + 6)
+        return 12 + claudeChip + reminderChips + CGFloat(timers.timers.count) * (chip + 6) + add + buttons + 8
+    }
+
+    /// The room a hovered chip's buttons take in the strip.
+    func chipButtonsWidth(_ chip: TrayChip?) -> CGFloat {
+        switch chip {
+        case .timer(let id): timers.timers.first { $0.id == id }.map { $0.isCountdown ? 84 : 64 } ?? 0
+        case .reminder(let id): reminders.pinned.contains { $0.id == id } ? ReminderMetrics.chipButtons : 0
+        case nil: 0
+        }
     }
 
     /// Timer strips may grow past the max ear width (they hug their chips),
@@ -187,10 +288,26 @@ extension NotchViewModel {
     func claudeToolWidth(expanded: Bool) -> CGFloat {
         guard let session = selectedSession else { return 190 }
         let line = TextWidth.of(ClaudeToolDetail.primaryLine(session), Theme.TextStyle.title)
-        let chips = claudeEarChips(for: session)
-        let figures = 34 + chips.reduce(0) { $0 + TextWidth.of($1.text, Theme.TextStyle.chip) + 12 }
-        let icon: CGFloat = session.activity.symbol != nil ? 18 : 0
         let cap: CGFloat = expanded ? 420 : 340
-        return min(8 + icon + max(min(line + 10, cap - 60), figures, 120) + 12, cap).rounded(.up)
+        let text = max(min(line + 10, cap - 60), claudeToolFigures(session), 120)
+        return min(claudeToolChrome(session) + text, max(cap, claudeToolMinimum), claudeEarCeiling).rounded(.up)
+    }
+
+    /// The least the right ear can be: its figures whole.
+    var claudeToolMinimum: CGFloat {
+        guard let session = selectedSession else { return 0 }
+        return (claudeToolChrome(session) + claudeToolFigures(session)).rounded(.up)
+    }
+
+    /// Padding, plus the state's symbol when there is one.
+    func claudeToolChrome(_ session: ClaudeSession) -> CGFloat {
+        8 + (session.activity.symbol != nil ? 18 : 0) + 12
+    }
+
+    /// Time · model · tokens, as drawn.
+    private func claudeToolFigures(_ session: ClaudeSession) -> CGFloat {
+        let chips = toolChips(for: session)
+        let tail = chips.isEmpty ? 0 : 8 + TextWidth.of("·", Theme.TextStyle.body) + chipsWidth(chips)
+        return elapsedWidth(session) + tail
     }
 }

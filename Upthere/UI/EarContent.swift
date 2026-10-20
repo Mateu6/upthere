@@ -285,7 +285,7 @@ struct RightEarContent: View {
             case .claudeTool(let expanded):
                 if let session = model.selectedSession {
                     ClaudeToolDetail(
-                        session: session, expanded: expanded, chips: model.claudeEarChips(for: session),
+                        session: session, expanded: expanded, chips: model.toolChips(for: session),
                         scrubber: model.rightStatusScrub)
                 }
             }

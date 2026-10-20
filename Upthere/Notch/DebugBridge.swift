@@ -33,6 +33,16 @@ enum DebugBridge {
                 case "timer-input": model.openTimerInput()
                 case "timer-pin-first": if let first = model.timers.timers.first { model.timers.togglePin(first.id) }
                 case "timer-pin-all": for t in model.timers.timers where !t.isPinned { model.timers.togglePin(t.id) }
+                case "reminder-input": model.openReminderInput()
+                case "reminder-demo": model.reminders.debugPin(Self.demoReminders())
+                case "reminder-clear": model.reminders.debugPin([])
+                // A strip chip as if hovered (its buttons out), or none.
+                case "chip-timer": model.hoveredChip = model.timers.timers.last.map { .timer($0.id) }
+                case "chip-reminder": model.hoveredChip = model.reminders.pinned.last.map { .reminder($0.id) }
+                case "chip-none": model.hoveredChip = nil
+                // The pointer arriving on a chip, through the real hover path.
+                case "point-first": if let t = model.timers.timers.first { model.hoverChip(.timer(t.id), inside: true) }
+                case "point-last": if let t = model.timers.timers.last { model.hoverChip(.timer(t.id), inside: true) }
                 case "claude-off": model.prefs.claudeEnabled = false
                 case "claude-on": model.prefs.claudeEnabled = true
                 case "claude-next": model.cycleSession(by: 1)
@@ -80,7 +90,7 @@ enum DebugBridge {
                     let g = model.geometry
                     let rect = CGRect(
                         x: g.notchRect.midX - 560, y: g.screenFrame.maxY - g.notchRect.maxY,
-                        width: 1120, height: g.height + (mode == "timer-input" ? 260 : 34))
+                        width: 1120, height: g.height + (mode == "timer-input" || mode == "reminder-input" ? 360 : 34))
                     captureOwnWindows(rect: rect, to: URL(fileURLWithPath: dir).appendingPathComponent("window.png"))
                     // Lets tooling overlay the physical notch on the capture.
                     try? "\(g.notchWidth) \(g.height)".write(
@@ -88,6 +98,22 @@ enum DebugBridge {
                 }
             }
         }
+    }
+
+    /// Pinned reminders for snapshots (in memory; Reminders is untouched).
+    private static func demoReminders() -> [ReminderItem] {
+        let work = ReminderList(id: "demo-work", title: "Work", hue: 250)
+        let home = ReminderList(id: "demo-home", title: "Home", hue: 40)
+        return [
+            ReminderItem(
+                id: "demo-1", title: "Reply to Ola about the invoice", list: work,
+                due: .init(date: .now.addingTimeInterval(-600), hasTime: true), priority: .high, completed: false),
+            ReminderItem(
+                id: "demo-2", title: "Buy oat milk", list: home,
+                due: .init(date: Calendar.current.startOfDay(for: .now.addingTimeInterval(86400)), hasTime: false),
+                priority: .none, completed: false),
+            ReminderItem(id: "demo-3", title: "Book dentist", list: home, due: nil, priority: .none, completed: false),
+        ]
     }
 
     /// `answer:allow|always|deny|stop|approve|keep|first` for the shown request.

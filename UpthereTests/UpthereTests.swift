@@ -776,3 +776,55 @@ struct AnswerInstallerTests {
         #expect(!HookInstaller.isCurrent(in: old))
     }
 }
+
+/// Strip chips open their buttons only once the pointer rests on one, so a
+/// fast sweep across the strip reshuffles nothing.
+@MainActor
+struct ChipHoverTests {
+    private func model() -> NotchViewModel {
+        let prefs = Preferences(defaults: UserDefaults(suiteName: "upthere.tests.\(UUID())")!)
+        let geometry = NotchGeometry(
+            screenFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            notchRect: CGRect(x: 656, y: 950, width: 200, height: 32), hasNotch: true)
+        return NotchViewModel(
+            nowPlaying: NowPlayingModel(prefs: prefs), claude: ClaudeModel(), prefs: prefs, geometry: geometry)
+    }
+
+    /// Crosses each chip faster than the rest delay, exit after the next enter
+    /// (the order the panels' events can arrive in).
+    private func sweep(_ model: NotchViewModel, over chips: [TrayChip], every step: Duration) async {
+        for (index, chip) in chips.enumerated() {
+            model.hoverChip(chip, inside: true)
+            if index > 0 { model.hoverChip(chips[index - 1], inside: false) }
+            try? await Task.sleep(for: step)
+        }
+    }
+
+    @Test func fastSweepOpensNothing() async {
+        let model = model()
+        let chips = (0..<5).map { _ in TrayChip.timer(UUID()) }
+        await sweep(model, over: chips, every: .milliseconds(40))
+        #expect(model.hoveredChip == nil)
+        model.hoverChip(chips[4], inside: false)
+        try? await Task.sleep(for: .milliseconds(400))
+        #expect(model.hoveredChip == nil)
+    }
+
+    @Test func restingOpensOneAndSweepingKeepsIt() async {
+        let model = model()
+        let a = TrayChip.reminder("a"), b = TrayChip.timer(UUID()), c = TrayChip.timer(UUID())
+        model.hoverChip(a, inside: true)
+        try? await Task.sleep(for: .milliseconds(260))
+        #expect(model.hoveredChip == a)
+        // Passing over b on the way to c leaves a open, then c takes over.
+        await sweep(model, over: [a, b, c], every: .milliseconds(40))
+        #expect(model.hoveredChip == a)
+        try? await Task.sleep(for: .milliseconds(260))
+        #expect(model.hoveredChip == c)
+        // Leaving the chips folds it away after a moment.
+        model.hoverChip(c, inside: false)
+        #expect(model.hoveredChip == c)
+        try? await Task.sleep(for: .milliseconds(350))
+        #expect(model.hoveredChip == nil)
+    }
+}
