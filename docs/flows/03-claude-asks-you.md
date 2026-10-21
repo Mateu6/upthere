@@ -24,7 +24,7 @@
 
 ## Facts for building E3 (Claude Code hooks docs, checked 2026-10-19)
 - `PreToolUse` may return `permissionDecision: "allow"` + `updatedInput` = original `questions` + `answers: {"<question>": "<label>"}`; multi-select joins labels with commas. `"allow"` alone is not enough.
-- `ExitPlanMode`: input carries injected `plan` and `planFilePath`; approve with `allow` (+ echoed input), keep planning with `deny` + reason.
+- `ExitPlanMode`: answered at its `PermissionRequest` (2026-10-21), not `PreToolUse`: the Claude app ignored a PreToolUse `allow` and showed its own dialog, so "Approve" did nothing. Approve = `decision.behavior: allow` (the session returns to its pre-plan mode), keep planning = `deny` + message. `PreToolUse` `ExitPlanMode` still marks the wait (S2) but gets no answer request.
 - While a `PreToolUse` hook waits, the terminal shows nothing; returning no output falls back to the normal dialog.
 
 ## After fixes (2026-10-19)

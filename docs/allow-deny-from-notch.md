@@ -1,8 +1,8 @@
 # Plan: Allow / Deny from the notch
 
 **Status:** built 2026-10-19 (flowcheck L1), widened to option questions and plan approval. What shipped
-differs from this plan: one `upthere-hook answer` mode serves `PreToolUse` (AskUserQuestion|ExitPlanMode) and
-`PermissionRequest`; the app decides the wait ("notch first, then the terminal after N s or ↗", never when the
+differs from this plan: one `upthere-hook answer` mode serves `PreToolUse` (AskUserQuestion) and
+`PermissionRequest` (permissions, and ExitPlanMode since 2026-10-21); the app decides the wait ("notch first, then the terminal after N s or ↗", never when the
 session's window is in front). The spike below wasn't needed: the docs say a `PreToolUse` hook runs before any
 dialog, so the terminal stays silent while the hook waits. See `docs/flows/02-…` and `03-…`.
 

@@ -18,7 +18,10 @@ nonisolated struct ClaudeQuestion: Sendable, Equatable {
 nonisolated struct ClaudeRequest: Sendable, Equatable, Identifiable {
     enum Kind: Sendable, Equatable {
         case questions([ClaudeQuestion])
-        /// ExitPlanMode: the plan's first line, when Claude Code sent it.
+        /// ExitPlanMode's approval dialog: the plan's first line, when
+        /// Claude Code sent it. Asked at `PermissionRequest`, not
+        /// `PreToolUse`: the Claude app ignores a PreToolUse "allow" for
+        /// ExitPlanMode and shows its own dialog anyway.
         case plan(summary: String?)
         /// `target` is exactly what will run or change: the command for
         /// Bash, the file for edits. `rule` spells out "Always allow".
@@ -54,7 +57,7 @@ nonisolated struct ClaudeRequest: Sendable, Equatable, Identifiable {
             let questions = (input["questions"] as? [[String: Any]] ?? []).compactMap(question)
             guard !questions.isEmpty else { return nil }
             kind = .questions(questions)
-        case ("PreToolUse", "ExitPlanMode"):
+        case ("PermissionRequest", "ExitPlanMode"):
             let summary = (input["plan"] as? String)?.split(whereSeparator: \.isNewline)
                 .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "#* ")) }
                 .first { !$0.isEmpty }
@@ -136,11 +139,15 @@ extension ClaudeRequest {
             updated["answers"] = picked.mapValues { $0.joined(separator: ", ") }
             specific = ["hookEventName": "PreToolUse", "permissionDecision": "allow", "updatedInput": updated]
         case (.plan, .approvePlan):
-            specific = ["hookEventName": "PreToolUse", "permissionDecision": "allow", "updatedInput": input]
+            // Leaving plan mode returns to the mode the session had before it.
+            specific = ["hookEventName": "PermissionRequest", "decision": ["behavior": "allow"]]
         case (.plan, .keepPlanning):
             specific = [
-                "hookEventName": "PreToolUse", "permissionDecision": "deny",
-                "permissionDecisionReason": "The user wants to keep planning. Ask what to change before trying again.",
+                "hookEventName": "PermissionRequest",
+                "decision": [
+                    "behavior": "deny",
+                    "message": "The user wants to keep planning. Ask what to change before trying again.",
+                ],
             ]
         case (.permission, .allow):
             specific = ["hookEventName": "PermissionRequest", "decision": ["behavior": "allow"]]

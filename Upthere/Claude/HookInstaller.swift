@@ -21,7 +21,7 @@ nonisolated enum HookInstaller {
     /// Claude Code discards output past `answerTimeout`; the helper gives up
     /// a little earlier (`answerDeadline` in UpthereHook).
     static let answerEvents: [(event: String, matcher: String)] = [
-        ("PreToolUse", "AskUserQuestion|ExitPlanMode"), ("PermissionRequest", "*"),
+        ("PreToolUse", "AskUserQuestion"), ("PermissionRequest", "*"),
     ]
     static let answerTimeout = 120
     static let answerArgument = " answer"
