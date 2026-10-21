@@ -39,9 +39,11 @@ extension NotchViewModel {
     var unit: CGFloat { geometry.height }
 
     /// Collapsed ears swell slightly under the cursor before peeking:
-    /// immediate feedback that the notch noticed you.
+    /// immediate feedback that the notch noticed you. An ear already showing
+    /// its peek (Claude waiting on you) has nothing more to open, so it stays put.
     func nudged(_ width: CGFloat, _ side: NotchSide) -> CGFloat {
-        width > 0 && nudgedSide == side && !isOpen(side) ? width + 6 : width
+        let autoPeeked = side == .left && effectiveLeftMode != .collapsed
+        return width > 0 && nudgedSide == side && !isOpen(side) && !autoPeeked ? width + 6 : width
     }
 
     func width(_ content: LeftContent) -> CGFloat {

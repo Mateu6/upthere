@@ -729,12 +729,24 @@ struct ClaudeRequestTests {
         let request = try #require(
             ClaudeRequest.parse(
                 payload: payload(
-                    ##"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"ExitPlanMode","tool_input":{"plan":"# Add dark mode\n1. Tokens"}}"##
+                    ##"{"hook_event_name":"PermissionRequest","session_id":"s1","tool_name":"ExitPlanMode","tool_input":{"plan":"# Add dark mode\n1. Tokens"}}"##
                 ))
             )
         #expect(request.kind == .plan(summary: "Add dark mode"))
-        #expect(request.output(for: .approvePlan)?.contains(#""permissionDecision":"allow""#) == true)
-        #expect(request.output(for: .keepPlanning)?.contains(#""permissionDecision":"deny""#) == true)
+        let approve = try #require(request.output(for: .approvePlan))
+        #expect(approve.contains(#""hookEventName":"PermissionRequest""#))
+        #expect(approve.contains(#""behavior":"allow""#))
+        #expect(request.output(for: .keepPlanning)?.contains(#""behavior":"deny""#) == true)
+    }
+
+    /// The Claude app ignores a PreToolUse "allow" for ExitPlanMode, so an
+    /// older install's PreToolUse hook gets no decision and waits for nothing.
+    @Test func planIsNotAnsweredBeforeItsDialog() {
+        #expect(
+            ClaudeRequest.parse(
+                payload: payload(
+                    #"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"ExitPlanMode","tool_input":{"plan":"x"}}"#))
+                == nil)
     }
 
     @MainActor @Test func clicksTooSoonAreIgnored() {
