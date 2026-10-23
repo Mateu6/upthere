@@ -10,8 +10,9 @@ extension NotchViewModel {
     var musicPalette: [NSColor] { nowPlaying.artwork?.palette ?? Self.neutralPalette }
 
     /// The colors an ear is tinted with: the cover's for music, Claude's
-    /// own for agents (amber while it needs you).
+    /// own for agents (amber while it needs you), the lead item's for the tray.
     func palette(for side: NotchSide) -> [NSColor] {
+        if side == .left, content.left == .timer || content.left == .timerStrip { return trayPalette }
         let music = showsMusic(side) || (side == .left && !claudeShown && showsMusic(.right))
             || (side == .right && !claudeShown && showsMusic(.left))
         if music { return musicPalette }
@@ -23,5 +24,15 @@ extension NotchViewModel {
         case .input: return Self.inputPalette
         default: return Self.claudePalette
         }
+    }
+
+    /// The tray takes the colour of what leads it: a timer that just ended,
+    /// else the one next to the notch, else the first reminder (red once
+    /// overdue, otherwise its list's colour).
+    var trayPalette: [NSColor] {
+        let timer = timers.timers.first { $0.id == timers.alertingID } ?? timers.collapsedTimers.first
+        if let timer { return Theme.gradient(from: Theme.timerTones[timer.colorIndex % Theme.timerTones.count]) }
+        guard let reminder = reminders.collapsedReminders.first else { return Self.neutralPalette }
+        return Theme.gradient(from: reminder.isOverdue() ? Theme.dangerTone : reminder.list.tone)
     }
 }

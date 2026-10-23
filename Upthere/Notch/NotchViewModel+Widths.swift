@@ -238,17 +238,20 @@ extension NotchViewModel {
             }
             return unit * 0.5 + 4 + CGFloat(text.count) * 7.4
         }
-            + reminders.collapsedReminders.map { item in
-                ReminderMetrics.collapsedCheck(unit: unit) + 4
-                    + min(TextWidth.of(item.title, Theme.TextStyle.label), ReminderMetrics.collapsedText)
-            }
-        let hidden = timers.hiddenCount + reminders.hiddenCount
+            + (prefs.reminderStyle == .icon
+                ? [ReminderMetrics.iconWidth(reminders.pinned, unit: unit)].filter { $0 > 0 }
+                : reminders.collapsedReminders.map(ReminderMetrics.collapsedWidth))
+        let hidden = timers.hiddenCount + collapsedRemindersHidden
         let badge: CGFloat = hidden > 0 ? 10 + CGFloat("+\(hidden)".count) * 7 : 0
         let spark: CGFloat = showsSpark && prefs.claudeEnabled && claude.primary?.activity.isWorking == true ? 17 : 0
         let spacing = CGFloat(max(0, items.count - 1)) * 8
         // Padding on both sides plus a little slack for a longer time.
         return 14 + items.reduce(0, +) + spacing + badge + spark + 6
     }
+
+    /// Pinned reminders the collapsed ear leaves to "+N": none as an icon,
+    /// which counts them all itself.
+    var collapsedRemindersHidden: Int { prefs.reminderStyle == .icon ? 0 : reminders.hiddenCount }
 
     /// The hover strip hugs its chips (Claude, each timer, +), with room
     /// for a hovered chip's buttons; it scrolls beyond the max width.

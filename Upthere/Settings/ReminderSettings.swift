@@ -42,6 +42,10 @@ struct ReminderSettings: View {
 
             if reminders.isAuthorized {
                 Section {
+                    Picker("Show pinned reminders as", selection: $prefs.reminderStyle) {
+                        ForEach(ReminderStyle.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
                     if reminders.pinned.isEmpty {
                         Text("Nothing pinned. Pin a reminder from the field to keep it beside the notch.")
                             .foregroundStyle(.secondary)
@@ -59,7 +63,7 @@ struct ReminderSettings: View {
                     Text("Pinned to the notch")
                 } footer: {
                     SettingsFooter(
-                        text: "Tick one in the notch to complete it. Done or deleted in Reminders, it leaves the notch too. Tags are saved as #hashtags in the notes: Apple doesn’t let other apps set real Reminders tags."
+                        text: "Name shows the most urgent ones by name; Icon keeps a small checklist with a count. Hover the notch to tick one done. Done or deleted in Reminders, it leaves the notch too. Tags are saved as #hashtags in the notes: Apple doesn’t let other apps set real Reminders tags."
                     )
                 }
             }

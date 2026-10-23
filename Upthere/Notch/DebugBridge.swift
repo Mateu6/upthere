@@ -36,6 +36,8 @@ enum DebugBridge {
                 case "reminder-input": model.openReminderInput()
                 case "reminder-demo": model.reminders.debugPin(Self.demoReminders())
                 case "reminder-clear": model.reminders.debugPin([])
+                case "reminder-name": model.prefs.reminderStyle = .name
+                case "reminder-icon": model.prefs.reminderStyle = .icon
                 // A strip chip as if hovered (its buttons out), or none.
                 case "chip-timer": model.hoveredChip = model.timers.timers.last.map { .timer($0.id) }
                 case "chip-reminder": model.hoveredChip = model.reminders.pinned.last.map { .reminder($0.id) }
