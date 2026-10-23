@@ -56,6 +56,15 @@ enum CenterPiece: String, CaseIterable, Identifiable {
     var title: String { self == .claude ? "Claude" : "Music" }
 }
 
+/// How pinned reminders show in the collapsed notch: by name, or as one
+/// small checklist icon with a count.
+enum ReminderStyle: String, CaseIterable, Identifiable {
+    case name, icon
+
+    var id: String { rawValue }
+    var title: String { self == .name ? "Name" : "Icon" }
+}
+
 /// How a usage figure is shown.
 enum UsageFormat: String, CaseIterable, Identifiable {
     case percent
@@ -204,6 +213,7 @@ final class Preferences {
     var reminderListID: String? { didSet { save(reminderListID, "reminderListID") } }
     /// The field's "Pin to notch" switch, as last left.
     var reminderPin: Bool { didSet { save(reminderPin, "reminderPin") } }
+    var reminderStyle: ReminderStyle { didSet { save(reminderStyle.rawValue, "reminderStyle") } }
 
     /// The 7-day local token count is only computed when it's displayed.
     var needsWeeklyTokenScan: Bool { infoWeek && infoWeekFormat == .amount }
@@ -266,6 +276,7 @@ final class Preferences {
             HotKey.ReminderPreset(rawValue: defaults.string(forKey: "reminderHotKey") ?? "") ?? .optionCommandR
         reminderListID = defaults.string(forKey: "reminderListID")
         reminderPin = defaults.object(forKey: "reminderPin") as? Bool ?? false
+        reminderStyle = ReminderStyle(rawValue: defaults.string(forKey: "reminderStyle") ?? "") ?? .name
     }
 
     private func save(_ value: Any?, _ key: String) {

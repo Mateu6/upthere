@@ -19,7 +19,11 @@ Who: someone mid-task who remembers something and wants it out of their head wit
 - Each row: tick done · pin/unpin · open in Reminders. ↑/↓ highlights a row; ↵ then pins/unpins it.
 
 ## In the notch
-- Collapsed left ear: up to 2 pinned reminders by name (overdue first, then soonest), ring in the list's colour, red with "!" once overdue; "+N" for the rest. Timers stay next to the notch. A name longer than the ear's cap rolls instead of ending in "…".
+- Collapsed left ear, as picked in Settings → Reminders ("Show pinned reminders as"):
+  - Name (default): up to 2 pinned reminders by name (overdue first, then soonest), red with "!" once overdue; "+N" for the rest. A name longer than the ear's cap rolls instead of ending in "…". No ring: it looked tickable but hovering only opens the strip.
+  - Icon: one checklist icon in the lead reminder's list colour (red with "!" when any is overdue), with the count past one.
+  - Timers stay next to the notch either way.
+- The tray's tint (Aurora, tinted Glass) follows what leads it: an ended timer, else the timer next to the notch, else the first reminder's list colour (red once overdue).
 - With the tray up, the music ear shows the cover (with bars, or the paused title) rather than bars alone.
 - Hover: the strip keeps the collapsed order out from the notch (timers, reminders, Claude), with the checklist (new reminder) and + (new timer) buttons at the far end. A chip per pinned reminder: tick done (1.6 s to tick again and undo), title, due date or list.
 - Resting on a chip ~180 ms opens its buttons (reminder: unpin, open in Reminders) on the side away from the notch, so the chip itself stays put. A fast sweep only tints the chips it passes; moving the rest to another chip swaps them in one spring. A cut-off chip at the strip's far end scrolls just enough to show its buttons.

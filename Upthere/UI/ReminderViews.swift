@@ -9,46 +9,101 @@ enum ReminderMetrics {
     static let chipText: CGFloat = 110
     /// A hovered chip's two buttons (unpin, open).
     static let chipButtons: CGFloat = 48
+    /// The overdue "!" beside a collapsed name or icon, with its gap.
+    static let overdueMark: CGFloat = 9
 
-    static func collapsedCheck(unit: CGFloat) -> CGFloat { (unit * 0.36).rounded() }
     static func chipCheck(unit: CGFloat) -> CGFloat { unit - 18 }
+    static func collapsedIcon(unit: CGFloat) -> CGFloat { (unit * 0.42).rounded() }
+
+    static func nameWidth(_ item: ReminderItem) -> CGFloat {
+        min(TextWidth.of(item.title, Theme.TextStyle.label), collapsedText)
+    }
+
+    /// A collapsed reminder by name: the name, plus "!" once overdue.
+    static func collapsedWidth(_ item: ReminderItem) -> CGFloat {
+        nameWidth(item) + (item.isOverdue() ? overdueMark : 0)
+    }
+
+    /// All pinned reminders as one icon: the icon, a count past one, "!"
+    /// when any is overdue.
+    static func iconWidth(_ items: [ReminderItem], unit: CGFloat) -> CGFloat {
+        guard !items.isEmpty else { return 0 }
+        let count = items.count > 1 ? 3 + TextWidth.of("\(items.count)", Theme.TextStyle.label) : 0
+        return collapsedIcon(unit: unit) + count + (items.contains { $0.isOverdue() } ? overdueMark + 1 : 0)
+    }
 }
 
-/// A pinned reminder in the collapsed ear: its circle in the list's colour
-/// (red once overdue) and its name.
+/// "!" for overdue, so it isn't told by colour alone.
+private struct OverdueMark: View {
+    var body: some View {
+        Image(systemName: "exclamationmark")
+            .font(.system(size: 9, weight: .heavy))
+            .foregroundStyle(Theme.danger)
+            .frame(width: ReminderMetrics.overdueMark - 2)
+            .transition(.blurReplace)
+    }
+}
+
+/// A pinned reminder in the collapsed ear: its name, in red with a "!" once
+/// overdue. The list's colour tints the ear instead of a
+/// ring, which looked tickable but only opened the strip.
 struct ReminderCollapsedItem: View {
     let item: ReminderItem
+    var mirrored = false
+
+    var body: some View {
+        let overdue = item.isOverdue()
+        HStack(spacing: 2) {
+            // The "!" leads the name (away from the notch), so it can't be
+            // read as the next reminder's.
+            if !mirrored && overdue { OverdueMark() }
+            // A long name rolls within its cap rather than ending in "…".
+            MarqueeText(
+                text: item.title, font: Theme.TextStyle.label.font, color: overdue ? Theme.danger : Theme.Ink.icon,
+                alignment: mirrored ? .leading : .trailing
+            )
+            .frame(width: ReminderMetrics.nameWidth(item))
+            if mirrored && overdue { OverdueMark() }
+        }
+        .animation(.smooth(duration: 0.3), value: overdue)
+    }
+}
+
+/// All pinned reminders as one checklist icon in the lead reminder's list
+/// colour (red once any is overdue), with how many past one.
+struct ReminderCollapsedIcon: View {
+    let items: [ReminderItem]
     let unit: CGFloat
     var mirrored = false
 
     var body: some View {
-        let tone = item.isOverdue() ? Theme.danger : item.list.tone.color
-        // A long name rolls within its cap rather than ending in "…".
-        let width = min(TextWidth.of(item.title, Theme.TextStyle.label), ReminderMetrics.collapsedText)
-        HStack(spacing: 4) {
-            if mirrored { circle(tone) }
-            MarqueeText(
-                text: item.title, font: Theme.TextStyle.label.font, color: Theme.Ink.icon,
-                alignment: mirrored ? .leading : .trailing
-            )
-            .frame(width: width)
-            if !mirrored { circle(tone) }
+        let overdue = items.contains { $0.isOverdue() }
+        let tone = overdue ? Theme.danger : items.first.map { $0.list.tone.color } ?? Theme.Ink.icon
+        HStack(spacing: 3) {
+            if mirrored && overdue { OverdueMark() }
+            if mirrored { icon(tone) }
+            if items.count > 1 {
+                Text("\(items.count)")
+                    .font(Theme.TextStyle.label.font)
+                    .foregroundStyle(Theme.Ink.icon)
+                    .fixedSize()
+                    .contentTransition(.numericText(value: Double(items.count)))
+                    .transition(.blurReplace)
+            }
+            if !mirrored { icon(tone) }
+            if !mirrored && overdue { OverdueMark() }
         }
+        .animation(.smooth(duration: 0.3), value: overdue)
+        .animation(.smooth(duration: 0.25), value: items.count)
     }
 
-    private func circle(_ tone: Color) -> some View {
-        let size = ReminderMetrics.collapsedCheck(unit: unit)
-        return Circle()
-            .strokeBorder(tone, lineWidth: 1.5)
-            // Overdue isn't told by colour alone.
-            .overlay {
-                if item.isOverdue() {
-                    Image(systemName: "exclamationmark").font(.system(size: size * 0.6, weight: .heavy)).foregroundStyle(tone)
-                        .transition(.blurReplace)
-                }
-            }
+    private func icon(_ tone: Color) -> some View {
+        let size = ReminderMetrics.collapsedIcon(unit: unit)
+        return Image(systemName: "checklist")
+            .font(.system(size: size * 0.8, weight: .semibold))
+            .foregroundStyle(tone)
             .frame(width: size, height: size)
-            .animation(.smooth(duration: 0.3), value: item.isOverdue())
+            .animation(.smooth(duration: 0.3), value: tone)
     }
 }
 

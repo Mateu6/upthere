@@ -42,7 +42,10 @@ final class RemindersModel {
     func isPinned(_ id: String) -> Bool { pinnedIDs.contains(id) }
 
     /// The ones the collapsed notch names: overdue and soonest due first.
-    var collapsedReminders: [ReminderItem] {
+    var collapsedReminders: [ReminderItem] { Array(rankedPinned.prefix(Self.collapsedLimit)) }
+
+    /// Every pinned reminder, overdue and soonest due first.
+    var rankedPinned: [ReminderItem] {
         let now = Date.now
         let ranked = pinned.enumerated().sorted { a, b in
             let (x, y) = (a.element, b.element)
@@ -54,7 +57,7 @@ final class RemindersModel {
             default: return a.offset < b.offset
             }
         }
-        return Array(ranked.prefix(Self.collapsedLimit).map(\.element))
+        return ranked.map(\.element)
     }
 
     var hiddenCount: Int { max(0, pinned.count - collapsedReminders.count) }

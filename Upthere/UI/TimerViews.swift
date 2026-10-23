@@ -385,13 +385,21 @@ struct TimerCollapsed: View {
         }
         .animation(.smooth(duration: 0.25), value: timers.collapsedTimers.map(\.id))
         .animation(.smooth(duration: 0.25), value: reminders.map(\.id))
-        .animation(.smooth(duration: 0.25), value: timers.hiddenCount + model.reminders.hiddenCount)
+        .animation(.smooth(duration: 0.25), value: timers.hiddenCount + model.collapsedRemindersHidden)
+        .animation(.smooth(duration: 0.25), value: model.prefs.reminderStyle)
         .animation(.smooth(duration: 0.25), value: model.claude.primary?.activity.isWorking == true)
     }
 
-    private func reminderItems(_ items: [ReminderItem], h: CGFloat) -> some View {
-        ForEach(items) { item in
-            ReminderCollapsedItem(item: item, unit: h, mirrored: mirrored).transition(.blurReplace)
+    @ViewBuilder private func reminderItems(_ items: [ReminderItem], h: CGFloat) -> some View {
+        if model.prefs.reminderStyle == .icon {
+            if !model.reminders.pinned.isEmpty {
+                ReminderCollapsedIcon(items: model.reminders.rankedPinned, unit: h, mirrored: mirrored)
+                    .transition(.blurReplace)
+            }
+        } else {
+            ForEach(items) { item in
+                ReminderCollapsedItem(item: item, mirrored: mirrored).transition(.blurReplace)
+            }
         }
     }
 
@@ -405,7 +413,7 @@ struct TimerCollapsed: View {
             ClaudeSparkView(style: .working, color: Theme.claude).frame(width: 9, height: 9)
                 .transition(.blurReplace)
         }
-        let hidden = timers.hiddenCount + model.reminders.hiddenCount
+        let hidden = timers.hiddenCount + model.collapsedRemindersHidden
         if hidden > 0 {
             Text("+\(hidden)")
                 .font(Theme.TextStyle.badge.font)
