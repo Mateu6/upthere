@@ -1,6 +1,7 @@
 // Overlay art for demo renders (ffmpeg here has no drawtext):
 //   swift art.swift notch <width-px> <height-px> <radius-px> out.png
 //   swift art.swift caption <width-px> <title> <subtitle|-> out.png
+//   swift art.swift dusk <width-px> <height-px> out.png
 import AppKit
 
 func write(_ image: NSBitmapImageRep, to path: String) {
@@ -34,6 +35,21 @@ func drawBackdrop(_ ctx: CGContext, _ w: Int, _ h: Int, glowY: CGFloat) {
     let center = CGPoint(x: CGFloat(w) / 2, y: CGFloat(h) - glowY)
     ctx.drawRadialGradient(glow, startCenter: center, startRadius: 0, endCenter: center,
                            endRadius: CGFloat(max(w, h)) * 0.5, options: [])
+}
+
+/// Upthere's dusk: violet at the top, pink, warm orange at the foot. The same OKLCH stops as the
+/// Upthere card on tworstwo.com (violet 45% 0.17 290, pink 62% 0.2 350, orange 78% 0.14 55),
+/// so a video on this backdrop sits seamlessly on the card.
+func drawDusk(_ ctx: CGContext, _ w: Int, _ h: Int) {
+    let space = CGColorSpaceCreateDeviceRGB()
+    let dusk = CGGradient(colorsSpace: space, colors: [
+        CGColor(red: 0.346, green: 0.230, blue: 0.669, alpha: 1),
+        CGColor(red: 0.846, green: 0.266, blue: 0.591, alpha: 1),
+        CGColor(red: 0.985, green: 0.617, blue: 0.349, alpha: 1),
+    ] as CFArray, locations: [0, 0.55, 1])!
+    // Origin is bottom-left: a slight diagonal from the top towards the foot, like the card's 170°.
+    ctx.drawLinearGradient(dusk, start: CGPoint(x: CGFloat(w) * 0.45, y: CGFloat(h)),
+                           end: CGPoint(x: CGFloat(w) * 0.55, y: 0), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
 }
 
 let args = CommandLine.arguments
@@ -89,6 +105,11 @@ case "caption":
                                         height: subtitleHeight), options: .usesLineFragmentOrigin)
     }
     write(image, to: args[5])
+
+case "dusk":
+    // The card backdrop: dusk only, no glow, no footer (the card carries the words).
+    let (w, h) = (Int(args[2])!, Int(args[3])!)
+    write(canvas(w, h) { ctx in drawDusk(ctx, w, h) }, to: args[4])
 
 case "backdrop":
     // Deep indigo, a glow where the notch strip sits, the repo at the foot.
@@ -160,6 +181,6 @@ case "card":
 
 default:
     print("usage: art.swift notch W H R out.png | caption W title subtitle|- out.png"
-        + " | backdrop W H glowY footerY footer|- out.png | card W H icon|- title subtitle small|- out.png")
+        + " | dusk W H out.png | backdrop W H glowY footerY footer|- out.png | card W H icon|- title subtitle small|- out.png")
     exit(1)
 }

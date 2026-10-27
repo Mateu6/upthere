@@ -58,8 +58,8 @@ class Director:
     """What a scene calls. In dry mode only the clock moves, which is how a
     scene's length is known before recording it."""
 
-    def __init__(self, dry=False, track=None):
-        self.dry, self.track, self.clock = dry, track, 0.0
+    def __init__(self, dry=False, track=None, music=None):
+        self.dry, self.track, self.music, self.clock = dry, track, music, 0.0
         self.sessions = []
         self.cameras = []  # (time, preset): where the reel's camera heads
 
@@ -90,10 +90,22 @@ class Director:
     def start_music(self, at=None):
         if self.dry:
             return
-        if self.track:
+        # Starting Spotify can bring it to the front, and then its long menu runs right up to
+        # the Claude ear. Remember who was in front and hand focus back afterwards.
+        front = subprocess.run(
+            ["osascript", "-e", 'tell application "System Events" to name of first application process whose frontmost is true'],
+            capture_output=True, text=True).stdout.strip()
+        if self.music:
+            # A track in Apple Music, by name: for takes that must show artwork you own.
+            osascript('tell application "Spotify" to pause')
+            osascript(f'tell application "Music" to play (first track of library playlist 1 whose name is "{self.music}")')
+        elif self.track:
             osascript(f'tell application "Spotify" to play track "{self.track}"')
         else:
             osascript('tell application "Spotify" to play')
+        if front and front not in ("Spotify", "Music"):
+            time.sleep(0.8)  # the player comes forward a moment after it starts playing
+            osascript(f'tell application "{front}" to activate')
         if at is not None:
             self.spotify(f"seek {at}")
 
@@ -203,6 +215,7 @@ CAMERAS = {
     "left": (-240, 400),
     "right": (235, 400),
     "timers": (-280, 470),  # the timers ear is the widest thing up there
+    "card": (0, 600),  # tighter than "wide": the notch has to read at card size
 }
 CAMERA_MOVE = 0.7
 
@@ -307,6 +320,28 @@ def timers(d):
     d.notch("timer-stopall"); d.wait(0.6)
 
 
+@scene("Upthere", None, camera="card")
+def card(d):
+    """tworstwo.com card cover: the notch at rest, music, then Claude works,
+    asks a decision in the notch, gets an answer and finishes. Ends calm."""
+    # Personal reminders must never reach a public video: clear the pinned ones from
+    # the notch (in memory only; Reminders itself is untouched).
+    d.notch("reminder-clear")
+    d.wait(1.0)  # just the notch: the first frame already says "notch"
+    d.start_music(); d.wait(1.8)
+    s = d.session(title="Ship the new ears", context=58_000)
+    s.start(); s.prompt(); d.wait(1.0)
+    d.notch("peek-left"); d.camera("left"); d.wait(0.8)
+    s.tool("Edit", file_path="Upthere/UI/EarContent.swift"); d.wait(1.4)
+    s.tool_done(); d.wait(0.3)
+    # A decision for the user, in the notch (the blue "asking you something").
+    s.ask("Ship the new ears now, or after the beta?"); d.wait(3.2)
+    s.tool_done("AskUserQuestion"); d.wait(0.4)
+    s.say("Shipping now. The new ears are in 1.4.", context=63_000)
+    s.stop(); d.wait(1.2)
+    d.notch("collapsed"); d.camera("card"); d.wait(1.6)
+
+
 # ---------------------------------------------------------------- record
 
 
@@ -316,8 +351,8 @@ def duration(name):
     return d.clock
 
 
-def run_scene(name, track):
-    d = Director(track=track)
+def run_scene(name, track, music=None):
+    d = Director(track=track, music=music)
     notchctl("demo-on")
     notchctl("collapsed")
     try:
@@ -353,7 +388,7 @@ def screen_size():
     sys.exit("Couldn't find the main display")
 
 
-def record(name, track):
+def record(name, track, music=None):
     RAW.mkdir(parents=True, exist_ok=True)
     notch_w, notch_h = notch_geometry()
     w, h, scale = screen_size()
@@ -365,7 +400,7 @@ def record(name, track):
     capture = subprocess.Popen(["screencapture", "-v", "-x", "-V", f"{length:.1f}", str(movie)])
     time.sleep(LEAD)
     try:
-        run_scene(name, track)
+        run_scene(name, track, music)
     finally:
         capture.wait()
     if not movie.exists():
@@ -404,6 +439,9 @@ REPO = "github.com/Mateu6/upthere"
 
 # canvas, where the band sits, caption on/off, footer distance from the bottom
 LAYOUTS = {
+    # tworstwo.com card cover: the strip at the very top like a real screen, larger, on the
+    # dusk backdrop that matches the Upthere card, no words (the card carries them).
+    "card": dict(size=(1920, 1080), band_top=0, caption=False, footer=None, band=0.2, backdrop="dusk"),
     "reel": dict(size=(1080, 1920), band_top=640, caption=True, footer=420),
     "wide": dict(size=(1920, 1080), band_top=300, caption=True, footer=60),
     "square": dict(size=(1080, 1080), band_top=290, caption=True, footer=70),
@@ -446,12 +484,15 @@ def render(name, formats):
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", movie],
         capture_output=True, text=True).stdout) - meta["lead"]
 
-    def composite(canvas, band_top, camera, fps, caption=None, footer=None):
+    def composite(canvas, band_top, camera, fps, caption=None, footer=None, band=BAND, backdrop="indigo"):
         """Filter graph and extra inputs: strip → camera → onto the backdrop."""
         cw, ch = canvas
-        band_h = even(cw * BAND)
-        bg = CACHE / f"backdrop-{cw}x{ch}-{band_top}-{footer}.png"
-        art("backdrop", cw, ch, band_top + band_h / 3, footer or 0, REPO if footer else "-", bg)
+        band_h = even(cw * band)
+        bg = CACHE / f"backdrop-{backdrop}-{cw}x{ch}-{band_top}-{footer}.png"
+        if backdrop == "dusk":
+            art("dusk", cw, ch, bg)
+        else:
+            art("backdrop", cw, ch, band_top + band_h / 3, footer or 0, REPO if footer else "-", bg)
         centre, width = camera
         x = f"(({SOURCE_WIDTH / 2})+({centre})-({width})/2)*{s}"
         graph = (
@@ -459,7 +500,7 @@ def render(name, formats):
             # with transparency to the band's aspect.
             f"[0:v][1:v]overlay=x=(W-w)/2:y=0,"
             f"crop={even(SOURCE_WIDTH * s)}:{even(strip_h * s)}:{even((sw - SOURCE_WIDTH * s) / 2)}:0,"
-            f"format=rgba,pad={even(SOURCE_WIDTH * s)}:{even(SOURCE_WIDTH * BAND * s)}:0:0:color=black@0,"
+            f"format=rgba,pad={even(SOURCE_WIDTH * s)}:{even(SOURCE_WIDTH * band * s)}:0:0:color=black@0,"
             f"fps={fps},zoompan=z='{SOURCE_WIDTH}/({width})':x='{x}':y=0:d=1:fps={fps}:s={cw}x{band_h}[band];"
             f"[2:v][band]overlay=0:{band_top}:shortest=1"
         )
@@ -495,9 +536,23 @@ def render(name, formats):
             continue
         out = OUT / f"{name}-{fmt}.mp4"
         ffmpeg(*composite(layout["size"], layout["band_top"], camera_expressions(name, 60), 60,
-                          caption=caption if layout["caption"] else None, footer=layout["footer"]),
+                          caption=caption if layout["caption"] else None, footer=layout["footer"],
+                          band=layout.get("band", BAND), backdrop=layout.get("backdrop", "indigo")),
                *X264, out)
         print(f"  {fmt:<6} {out.relative_to(ROOT)}")
+        if fmt == "card":
+            web_card(out, name)
+
+
+def web_card(master, name):
+    """The card cover for the web: 960 px, silent, small; plus the poster (the last, calm frame)."""
+    web = OUT / f"{name}-card-web.mp4"
+    ffmpeg("-i", master, "-vf", "scale=960:-2", "-an", "-c:v", "libx264", "-preset", "slow", "-crf", "27",
+           "-pix_fmt", "yuv420p", "-r", "30", "-movflags", "+faststart", web)
+    poster = OUT / f"{name}-card-poster.jpg"
+    ffmpeg("-sseof", "-0.2", "-i", master, "-frames:v", "1", "-vf", "scale=960:-2", "-q:v", "4", poster)
+    print(f"  web    {web.relative_to(ROOT)}  {web.stat().st_size / 1e3:.0f} kB")
+    print(f"  poster {poster.relative_to(ROOT)}")
 
 
 # Named cuts for `showreel`: scene@in-out trims each scene to its best part
@@ -576,6 +631,7 @@ def main():
     p.add_argument("command", choices=["list", "run", "record", "render", "showreel"])
     p.add_argument("args", nargs="*")
     p.add_argument("--track", help="spotify:track:… URI each music scene starts")
+    p.add_argument("--music", help="name of an Apple Music track to play instead of Spotify (artwork you own)")
     p.add_argument("--formats", default="gif,reel,wide,square")
     p.add_argument("--no-cards", action="store_true", help="showreel without intro/outro cards")
     opts = p.parse_args()
@@ -592,12 +648,12 @@ def main():
             print(f"{name:<18} {duration(name):5.1f}s  {spec['doc']}")
     elif opts.command == "run":
         for name in scenes(opts.args):
-            run_scene(name, opts.track)
+            run_scene(name, opts.track, opts.music)
         notchctl("demo-off")
     elif opts.command == "record":
         try:
             for name in scenes(opts.args):
-                record(name, opts.track)
+                record(name, opts.track, opts.music)
         finally:
             notchctl("demo-off")
     elif opts.command == "render":
