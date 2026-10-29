@@ -119,7 +119,7 @@ struct PanelIconButtonStyle: ButtonStyle {
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
                 .animation(.spring(duration: 0.2, bounce: 0), value: pressed)
-                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+                .animation(Theme.Springs.hover, value: hovering)
         }
     }
 }

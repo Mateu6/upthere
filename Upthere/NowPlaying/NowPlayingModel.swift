@@ -18,6 +18,11 @@ final class NowPlayingModel {
     @ObservationIgnored private let artworkStore = ArtworkStore()
     /// Latest known state per player; the adapter only reports the elected player.
     @ObservationIgnored private var players: [String: PlaybackSnapshot] = [:]
+    /// Applies a change of track (title or artist). The notch wraps it in
+    /// the ear's spring, so the piece's new width and its content move as one.
+    @ObservationIgnored var applyTrackChange: (_ from: PlaybackSnapshot?, _ to: PlaybackSnapshot?, _ apply: () -> Void) -> Void = {
+        _, _, apply in apply()
+    }
     @ObservationIgnored private var adapterElected: String?
     @ObservationIgnored private var lingerTask: Task<Void, Never>?
     @ObservationIgnored private var pausedSince: Date?
@@ -119,6 +124,8 @@ final class NowPlayingModel {
     /// Debug: paused for longer than the linger time, so the track is still
     /// known but no longer live.
     var debugStale = false { didSet { recompute() } }
+    /// Shows this title instead of the real one (track-change checks).
+    var debugTitle: String? { didSet { recompute() } }
     #endif
 
     private func recompute() {
@@ -163,8 +170,15 @@ final class NowPlayingModel {
 
         #if DEBUG
         if debugPaused || debugStale { chosen?.isPlaying = false }
+        if let debugTitle { chosen?.title = debugTitle }
         #endif
-        if current != chosen { current = chosen }
+        if current != chosen {
+            if current?.title != chosen?.title || current?.artist != chosen?.artist {
+                applyTrackChange(current, chosen) { self.current = chosen }
+            } else {
+                current = chosen
+            }
+        }
         if let chosen {
             let art = artworkStore.artwork(for: chosen.trackKey)
             if artwork != art { artwork = art }

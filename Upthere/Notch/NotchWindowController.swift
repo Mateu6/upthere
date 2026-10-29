@@ -28,6 +28,9 @@ final class NotchWindowController {
         viewModel = model
         left = EarWindow(side: .left, root: EarRootView(model: model, side: .left, actions: actions))
         right = EarWindow(side: .right, root: EarRootView(model: model, side: .right, actions: actions))
+        model.presentedEarWidth = { [weak left, weak right] side in
+            (side == .left ? left : right)?.presentedEar ?? 0
+        }
 
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main

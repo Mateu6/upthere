@@ -163,8 +163,8 @@ private struct TransportButtonStyle: ButtonStyle {
                     .fill(pressed ? Theme.Ink.pressed : hovering ? Theme.Ink.hover : .clear)
                     .scaleEffect(pressed ? 0.92 : hovering ? 1 : 0.6)
             }
-            .animation(pressed ? .spring(duration: 0.12, bounce: 0) : .spring(duration: 0.3, bounce: 0.2), value: pressed)
-            .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+            .animation(Theme.Springs.press(pressed), value: pressed)
+            .animation(Theme.Springs.hover, value: hovering)
     }
 }
 
@@ -189,8 +189,8 @@ struct HoverButtonStyle: ButtonStyle {
                         .scaleEffect(pressed ? 0.92 : hovering ? 1 : 0.6)
                 }
                 .onHover { hovering = $0 }
-                .animation(pressed ? .spring(duration: 0.12, bounce: 0) : .spring(duration: 0.3, bounce: 0.2), value: pressed)
-                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+                .animation(Theme.Springs.press(pressed), value: pressed)
+                .animation(Theme.Springs.hover, value: hovering)
         }
     }
 }
@@ -224,8 +224,8 @@ struct RowButtonStyle: ButtonStyle {
                 .scaleEffect(pressed ? 0.97 : 1)
                 .onHover { hovering = $0 }
                 .animation(.spring(duration: 0.2, bounce: 0), value: pressed)
-                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
-                .animation(.spring(duration: 0.24, bounce: 0), value: highlighted)
+                .animation(Theme.Springs.hover, value: hovering)
+                .animation(Theme.Springs.hover, value: highlighted)
         }
     }
 }
@@ -310,8 +310,8 @@ struct LiftButtonStyle: ButtonStyle {
                 .scaleEffect(pressed ? 0.95 : hovering ? scale : 1)
                 .brightness(pressed ? -0.06 : hovering ? 0.08 : 0)
                 .onHover { hovering = $0 }
-                .animation(pressed ? .spring(duration: 0.12, bounce: 0) : .spring(duration: 0.3, bounce: 0.2), value: pressed)
-                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+                .animation(Theme.Springs.press(pressed), value: pressed)
+                .animation(Theme.Springs.hover, value: hovering)
         }
     }
 }

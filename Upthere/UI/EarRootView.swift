@@ -1,13 +1,24 @@
 import SwiftUI
 
 enum Theme {
-    static let spring = Animation.spring(response: 0.36, dampingFraction: 0.84)
+    /// Springs for small interactions. Everything that can reverse (hover,
+    /// press, pull and release) runs on a spring, so an interruption keeps
+    /// its speed instead of stalling the way a timed ease would.
+    enum Springs {
+        static let hover = Animation.spring(duration: 0.24, bounce: 0)
+        static let pressIn = Animation.spring(duration: 0.12, bounce: 0)
+        /// Press release is the one place a little bounce is OK.
+        static let pressRelease = Animation.spring(duration: 0.3, bounce: 0.2)
+        static func press(_ pressed: Bool) -> Animation { pressed ? pressIn : pressRelease }
+        /// Back to the edge after a pull past it (Apple's `.snappy`).
+        static let release = Animation.snappy
+    }
     /// Ear open/close springs (perceptual durations; critically damped, no
     /// overshoot), run by EarWindow on the mask. Closing takes ~70% of
     /// opening: with zero bounce, speed and that asymmetry are what make the
     /// ears feel lively (docs/design-language.md, "Instrument").
-    static let earOpenDuration: Double = 0.26
-    static let earCloseDuration: Double = 0.19
+    static let earOpenDuration: Double = 0.22
+    static let earCloseDuration: Double = 0.16
     /// Layout moves that aren't an ear opening or closing (sliding to a new
     /// notch position, a piece growing).
     static let earDuration: Double = earOpenDuration
@@ -15,7 +26,7 @@ enum Theme {
     static func earSpring(opening: Bool) -> Animation { .spring(duration: earDuration(opening: opening), bounce: 0) }
     /// Content swapping inside an ear. It starts with the mask but runs a
     /// little longer, so the shape leads and the content follows.
-    static let contentSwap = Animation.smooth(duration: 0.24)
+    static let contentSwap = Animation.smooth(duration: 0.2)
     /// How far new content travels outwards from the notch as it arrives.
     static let contentSlide: CGFloat = 8
     /// Claude's brand colour, kept at its exact sRGB value. Other colours

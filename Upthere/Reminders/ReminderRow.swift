@@ -110,7 +110,7 @@ private struct CheckButtonStyle: ButtonStyle {
                 .opacity(hovering || configuration.isPressed ? 1 : 0.9)
                 .onHover { hovering = $0 }
                 .animation(.spring(duration: 0.12, bounce: 0), value: configuration.isPressed)
-                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+                .animation(Theme.Springs.hover, value: hovering)
         }
     }
 }

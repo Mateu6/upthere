@@ -70,7 +70,12 @@ extension NotchViewModel {
     /// Claude's piece hugs its project name (the status rolls beneath it),
     /// widening on hover to fit time and usage. It may grow larger when it
     /// shares the screen with music only, as it has more to say.
-    var claudePieceWidth: CGFloat { claudePieceWidth(hovered: claudePieceHovered) }
+    var claudePieceWidth: CGFloat { claudePieceWidth(hovered: claudePieceDetailed) }
+
+    /// Claude's piece shows time and usage while hovered, and all the while
+    /// the ear beside it is open: it widens in the same move as the ear, so
+    /// moving between Claude and the reminders never pushes them aside.
+    var claudePieceDetailed: Bool { claudePieceHovered || content.left == .claudePiece(timers: .strip) }
 
     func claudePieceWidth(hovered: Bool) -> CGFloat {
         if let answer = answerRowWidth { return answer }
@@ -200,8 +205,10 @@ extension NotchViewModel {
         return ((art ? unit + 2 : 10) + min(text + 2, 170) + 10).rounded(.up)
     }
 
-    var musicHugWidth: CGFloat {
-        guard let snapshot = nowPlaying.current else { return 250 }
+    var musicHugWidth: CGFloat { musicHugWidth(for: nowPlaying.current) }
+
+    func musicHugWidth(for snapshot: PlaybackSnapshot?) -> CGFloat {
+        guard let snapshot else { return 250 }
         let text = max(
             TextWidth.of(snapshot.title, Theme.TextStyle.title),
             TextWidth.of(snapshot.artist, Theme.TextStyle.body))

@@ -25,8 +25,13 @@ struct NotchGeometry: Equatable {
     /// Debug: lay out a notched screen as if it had no notch.
     nonisolated(unsafe) static var debugNotchless = false
     private static var notchless: Bool { debugNotchless }
+    /// Debug: lay out a notchless screen as if it had a MacBook-sized notch,
+    /// to check notch-only behaviour on an external display.
+    nonisolated(unsafe) static var debugFakeNotch = false
+    private static var fakeNotch: Bool { debugFakeNotch }
     #else
     private static var notchless: Bool { false }
+    private static var fakeNotch: Bool { false }
     #endif
 
     static func make(for screen: NSScreen) -> NotchGeometry {
@@ -45,6 +50,11 @@ struct NotchGeometry: Equatable {
         // No notch: a zero-width "virtual notch" at the top center, as tall
         // as the menu bar. The ears meet in the middle and form a pill.
         let menuBar = max(24, frame.maxY - screen.visibleFrame.maxY)
+        if fakeNotch {
+            return NotchGeometry(
+                screenFrame: frame,
+                notchRect: CGRect(x: frame.midX - 92, y: frame.maxY - 32, width: 184, height: 32), hasNotch: true)
+        }
         return NotchGeometry(
             screenFrame: frame,
             notchRect: CGRect(x: frame.midX, y: frame.maxY - menuBar, width: 0, height: min(menuBar, 32)),

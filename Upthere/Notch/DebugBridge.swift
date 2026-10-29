@@ -27,7 +27,11 @@ enum DebugBridge {
                 case "settings": actions.openSettings()
                 case "hud-volume": model.debugShowHUD(.volume(0.62), side: .right)
                 case let mode? where mode.hasPrefix("scrub:"):
-                    model.leftStatusScrub.scrub(by: CGFloat(Double(mode.dropFirst(6)) ?? 0))
+                    model.leftStatusScrub.scrub(by: CGFloat(Double(mode.dropFirst(6)) ?? 0), elastic: true)
+                case "scrub-release": model.leftStatusScrub.release()
+                case let mode? where mode.hasPrefix("title:"):
+                    let title = String(mode.dropFirst(6))
+                    model.nowPlaying.debugTitle = title.isEmpty ? nil : title
                 case let mode? where mode.hasPrefix("timer:"): model.timers.start(String(mode.dropFirst(6)))
                 case "timer-stopall": model.timers.stopAll()
                 case "timer-input": model.openTimerInput()
@@ -66,6 +70,9 @@ enum DebugBridge {
                 case "pause-fresh": model.nowPlaying.debugStale = false
                 case "notchless-on", "notchless-off":
                     NotchGeometry.debugNotchless = mode == "notchless-on"
+                    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+                case "fake-notch-on", "fake-notch-off":
+                    NotchGeometry.debugFakeNotch = mode == "fake-notch-on"
                     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
                 case "seek-active": model.previewSeek((model.nowPlaying.current?.duration ?? 200) * 0.4)
                 case "seek-end": model.endSeek(at: nil, after: .zero)

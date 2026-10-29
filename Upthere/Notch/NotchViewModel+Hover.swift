@@ -34,21 +34,46 @@ extension NotchViewModel {
     /// A strip chip shows its buttons once the pointer rests on it. Sweeping
     /// across the strip changes nothing: whichever chip is open stays open
     /// until the pointer settles on another (they swap in one move) or
-    /// leaves the chips (it folds away).
+    /// leaves its ear (it folds away). Over the rest of the ear (Claude's
+    /// piece, the add buttons) it stays open, so nothing moves under the
+    /// pointer on the way back.
     func hoverChip(_ chip: TrayChip, inside: Bool) {
         if inside {
             pointedChip = chip
         } else if pointedChip == chip {
             pointedChip = nil
         }
+        settleChips()
+    }
+
+    /// Lines the open chip up with the pointer after a rest, or a moment
+    /// after the pointer has left the strip's ear.
+    func settleChips() {
         chipSettleTask?.cancel()
-        guard pointedChip != hoveredChip else { return }
+        guard chipWanted != hoveredChip else { return }
         let delay: Duration = pointedChip == nil ? Self.chipLeaveDelay : Self.chipRestDelay
         chipSettleTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self, self.hoveredChip != self.pointedChip else { return }
-            self.showButtons(of: self.pointedChip)
+            guard !Task.isCancelled, let self else { return }
+            let wanted = self.chipWanted
+            if wanted != self.hoveredChip { self.showButtons(of: wanted) }
         }
+    }
+
+    private var chipWanted: TrayChip? {
+        if let pointedChip { return pointedChip }
+        guard let hoveredChip, let side = stripSide, cursorOverEar(side) else { return nil }
+        return hoveredChip
+    }
+
+    /// The ear the timer strip is open in, if any.
+    private var stripSide: NotchSide? {
+        switch content.left {
+        case .timerStrip, .claudePiece(timers: .strip): return .left
+        default: break
+        }
+        if case .musicWithTimers(strip: true) = content.right { return .right }
+        return nil
     }
 
     /// One move for the whole strip: the old chip's buttons fold, the new
@@ -73,6 +98,75 @@ extension NotchViewModel {
         showButtons(of: nil)
     }
 
+    /// Claude's piece widens for time and usage once the pointer rests on
+    /// it, like a chip. Widening pushes the timers and reminders beside it
+    /// outwards, so it then stays wide while the pointer is anywhere over
+    /// that ear: moving between Claude and the reminders moves nothing.
+    func hoverClaudePiece(_ inside: Bool) {
+        claudePiecePointed = inside
+        settleClaudePiece()
+    }
+
+    /// Lines the piece up with the pointer after a rest (or a short grace
+    /// once it has left the ear), so a sweep across it changes nothing.
+    func settleClaudePiece() {
+        let wanted = claudePieceWanted
+        claudePieceSettleTask?.cancel()
+        guard wanted != claudePieceHovered else { return }
+        let delay = wanted ? Self.chipRestDelay : Self.chipLeaveDelay
+        claudePieceSettleTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            let wanted = self.claudePieceWanted
+            guard wanted != self.claudePieceHovered else { return }
+            withAnimation(Theme.earSpring(opening: wanted)) { self.claudePieceHovered = wanted }
+        }
+    }
+
+    /// Once wide, it stays wide while the ear is open too, so leaving shrinks
+    /// it in the same move as the ear closing (see `collapse`).
+    private var claudePieceWanted: Bool {
+        claudePiecePointed || (claudePieceHovered && (leftMode != .collapsed || cursorOverEar(.left)))
+    }
+
+    /// The pointer is over `side`'s ear, its piece by the notch included
+    /// (which counts as the notch while the ear is closed).
+    private func cursorOverEar(_ side: NotchSide) -> Bool {
+        let region = regionUnderCursor()
+        return region == side || (region == .center && cursorOverInnerPiece(side))
+    }
+
+    /// Claude's piece widens and narrows with the left ear (see
+    /// `claudePieceDetailed`), so that change runs as one transaction on the
+    /// ear's spring; otherwise its content and frame animate apart and the
+    /// text snaps.
+    func animatingLeftMode(to new: EarMode, _ apply: () -> Void) {
+        if case .claudePiece = content.left {
+            withAnimation(Theme.earSpring(opening: new != .collapsed), apply)
+        } else {
+            apply()
+        }
+    }
+
+    /// The swell before an ear peeks, on the ear's spring like any other
+    /// width change, so it hands over smoothly when the ear then opens.
+    private func nudge(_ side: NotchSide?) {
+        withAnimation(Theme.earSpring(opening: side != nil)) { nudgedSide = side }
+    }
+
+    /// A new track can resize the music piece (it hugs the title): one
+    /// transaction on the ear's spring, opening or closing by which way it goes.
+    func animatingTrackChange(from old: PlaybackSnapshot?, to new: PlaybackSnapshot?, _ apply: () -> Void) {
+        let opening = musicHugWidth(for: new) >= musicHugWidth(for: old)
+        withAnimation(Theme.earSpring(opening: opening), apply)
+    }
+
+    func claudePieceGone() {
+        claudePiecePointed = false
+        claudePieceSettleTask?.cancel()
+        claudePieceHovered = false
+    }
+
     // MARK: Interaction
 
     /// Hover enter/exit events only say "something changed": what is hovered
@@ -88,11 +182,13 @@ extension NotchViewModel {
         // Pointer moves only matter when they cross into another region.
         if inside, region == lastHoverRegion { return }
         lastHoverRegion = region
+        if claudePieceHovered { settleClaudePiece() }
+        if hoveredChip != nil { settleChips() }
         for side in [NotchSide.left, .right] {
             if region == side {
                 closeTasks.removeValue(forKey: side)?.cancel()
                 guard mode(side) == .collapsed, openTasks[side] == nil else { continue }
-                if nudgedSide != side { nudgedSide = side }
+                if nudgedSide != side { nudge(side) }
                 // Hover intent: ignore the cursor just passing through the menu bar.
                 openTasks[side] = Task { [weak self] in
                     try? await Task.sleep(for: .milliseconds(70))
@@ -102,7 +198,7 @@ extension NotchViewModel {
                 }
             } else {
                 openTasks.removeValue(forKey: side)?.cancel()
-                if nudgedSide == side { nudgedSide = nil }
+                if nudgedSide == side { nudge(nil) }
                 guard mode(side) != .collapsed, closeTasks[side] == nil else { continue }
                 let delay = mode(side) == .expanded ? max(prefs.earCloseDelay, 0.6) : prefs.earCloseDelay
                 closeTasks[side] = Task { [weak self] in
@@ -172,8 +268,14 @@ extension NotchViewModel {
             hudTask?.cancel()
             hud = nil
         }
-        if nudgedSide == side { nudgedSide = nil }
-        if side == .left { selectedSessionID = nil }
+        if nudgedSide == side { nudge(nil) }
+        if side == .left {
+            selectedSessionID = nil
+            if claudePieceHovered && !claudePiecePointed {
+                claudePieceSettleTask?.cancel()
+                withAnimation(Theme.earSpring(opening: false)) { claudePieceHovered = false }
+            }
+        }
         setMode(side, .collapsed)
     }
 

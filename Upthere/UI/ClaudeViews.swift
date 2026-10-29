@@ -91,7 +91,7 @@ struct SessionCountBadge: View {
                 label(nil)
             }
         }
-        .animation(.spring(duration: 0.24, bounce: 0), value: waiting?.id)
+        .animation(Theme.Springs.hover, value: waiting?.id)
     }
 
     private func label(_ activity: ClaudeActivity?) -> some View {
@@ -248,6 +248,9 @@ extension ClaudeSession {
 struct ClaudePiece: View {
     let model: NotchViewModel
     let session: ClaudeSession
+    /// Under the pointer right now: the wash shows at once, while the
+    /// piece widens only once the pointer rests (see `hoverClaudePiece`).
+    @State private var pointing = false
 
     var body: some View {
         if model.answerShown {
@@ -266,18 +269,21 @@ struct ClaudePiece: View {
 
     private var piece: some View {
         let count = model.claude.visibleSessions.count
-        let hovering = model.claudePieceHovered
         return Button { model.claude.focus(session) } label: {
-            label(count: count, hovering: hovering)
+            label(count: count, detailed: model.claudePieceDetailed)
         }
-        .buttonStyle(PieceButtonStyle(hovering: hovering))
-        .onHover { model.claudePieceHovered = $0 }
-        .onDisappear { model.claudePieceHovered = false }
-        .animation(.smooth(duration: 0.22), value: hovering)
+        .buttonStyle(PieceButtonStyle(hovering: pointing))
+        .onHover { inside in
+            pointing = inside
+            model.hoverClaudePiece(inside)
+        }
+        .onDisappear { model.claudePieceGone() }
+        .animation(Theme.Springs.hover, value: pointing)
+        .animation(Theme.earSpring(opening: model.claudePieceDetailed), value: model.claudePieceDetailed)
         .help(session.hostSessionID != nil ? "Open this chat in Claude" : "Show terminal")
     }
 
-    private func label(count: Int, hovering: Bool) -> some View {
+    private func label(count: Int, detailed: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 0) {
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
@@ -286,7 +292,7 @@ struct ClaudePiece: View {
                 }
                 MarqueeText(
                     text: session.projectName, font: Theme.TextStyle.title.font, alignment: .trailing, hugs: true)
-                if hovering {
+                if detailed {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(Theme.time(context.date.timeIntervalSince(session.turnStarted ?? session.since)))
                             .monospacedDigit()
@@ -297,14 +303,14 @@ struct ClaudePiece: View {
                     .transition(.blurReplace)
                 }
             }
-            // Hovering adds time and usage but never hides the description,
+            // Detailed, it adds time and usage but never hides the description,
             // which can be scrolled sideways.
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
                 MarqueeText(
                     text: session.statusLine, font: Theme.TextStyle.body.font, color: session.statusColor,
                     alignment: .trailing, hugs: true, scrubber: model.leftStatusScrub)
-                if hovering {
+                if detailed {
                     let chips = model.pieceChips(for: session)
                     if !chips.isEmpty {
                         Group {
@@ -321,12 +327,14 @@ struct ClaudePiece: View {
         .padding(.leading, 10)
         .padding(.trailing, 2)
         .contentShape(Rectangle())
+        // Inside the label: a ButtonStyle's label doesn't reliably pick up
+        // animations from outside the button.
+        .animation(Theme.earSpring(opening: detailed), value: detailed)
     }
 }
 
 /// Claude's piece: a faint wash under the pointer, a deeper one and a
-/// slight sink while pressed. Hover comes from the model, which also
-/// widens the piece.
+/// slight sink while pressed.
 private struct PieceButtonStyle: ButtonStyle {
     let hovering: Bool
 
@@ -339,7 +347,7 @@ private struct PieceButtonStyle: ButtonStyle {
                     .padding(.vertical, 3)
             }
             .scaleEffect(pressed ? 0.98 : 1)
-            .animation(pressed ? .spring(duration: 0.12, bounce: 0) : .spring(duration: 0.3, bounce: 0.2), value: pressed)
+            .animation(Theme.Springs.press(pressed), value: pressed)
     }
 }
 
@@ -438,7 +446,7 @@ struct ClaudeBadge: View {
                         .transition(.blurReplace.combined(with: .scale(0.95)))
                 }
             }
-            .animation(.spring(duration: 0.24, bounce: 0), value: count)
+            .animation(Theme.Springs.hover, value: count)
     }
 
     /// One symbol per state, so a change animates as a symbol replace.

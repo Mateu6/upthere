@@ -8,8 +8,8 @@ parked (see `parked.md`).
 - **Ears: direction B, Instrument.** Titles 12 Medium (−0.005em), secondary
   10.5 Regular at 56%, numbers in SF Mono 10, and only three sizes
   (12 · 10.5 · 9). Glass is thick: a dark base for legibility, strong blur and
-  saturation, a rim on three edges and a soft shadow. Motion: open 0.26 s,
-  close 0.19 s, zero bounce, content slides 8 px out with the shape, and an
+  saturation, a rim on three edges and a soft shadow. Motion: open 0.22 s,
+  close 0.16 s, zero bounce, content slides 8 px out with the shape, and an
   interrupted ear keeps its velocity.
   *Why:* it matches "rigid" and "polished". It reads as a precise tool rather
   than a toy.
@@ -38,7 +38,7 @@ Secondary text is white at 56% (`Theme.secondary`). The −0.005em title
 tracking from the mock was left out: at 12 pt it's 0.06 pt and invisible.
 
 **Motion** (`Theme` in `UI/EarRootView.swift`, `UI/EarMotion.swift`):
-- Ear open 0.26 s, close 0.19 s, zero bounce. The CA mask and the SwiftUI
+- Ear open 0.22 s, close 0.16 s, zero bounce. The CA mask and the SwiftUI
   widths (`.earSpring(value:)`) pick the same spring by direction.
 - Velocity: `EarWindow` solves the spring in closed form (`EarMotion`) and
   passes the current speed to the next spring as `initialVelocity`.

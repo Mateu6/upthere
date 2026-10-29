@@ -309,7 +309,7 @@ struct TimerChip: View {
             pointing = inside
             model.hoverChip(.timer(timer.id), inside: inside)
         }
-        .animation(.easeOut(duration: 0.12), value: pointing)
+        .animation(Theme.Springs.hover, value: pointing)
         .animation(.smooth(duration: 0.24), value: timer.isPinned)
         .animation(Theme.contentSwap, value: alerting)
         .onDisappear { model.chipGone(.timer(timer.id)) }

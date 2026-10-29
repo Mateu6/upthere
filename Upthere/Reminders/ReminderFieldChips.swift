@@ -224,7 +224,7 @@ struct FieldChipStyle: ButtonStyle {
                 .scaleEffect(pressed ? 0.96 : 1)
                 .onHover { hovering = $0 }
                 .animation(.spring(duration: 0.12, bounce: 0), value: pressed)
-                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
+                .animation(Theme.Springs.hover, value: hovering)
                 .animation(.smooth(duration: 0.2), value: active)
         }
     }
