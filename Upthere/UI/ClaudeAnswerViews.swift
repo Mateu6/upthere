@@ -253,9 +253,9 @@ private struct AnswerChipStyle: ButtonStyle {
                 .scaleEffect(pressed ? 0.95 : 1)
                 .brightness(prominent ? (pressed ? -0.08 : hovering ? 0.06 : 0) : 0)
                 .onHover { hovering = $0 }
-                .animation(pressed ? .spring(duration: 0.12, bounce: 0) : .spring(duration: 0.3, bounce: 0.2), value: pressed)
-                .animation(.spring(duration: 0.24, bounce: 0), value: hovering)
-                .animation(.spring(duration: 0.24, bounce: 0), value: selected)
+                .animation(Theme.Springs.press(pressed), value: pressed)
+                .animation(Theme.Springs.hover, value: hovering)
+                .animation(Theme.Springs.hover, value: selected)
         }
 
         private func fill(pressed: Bool) -> Color {

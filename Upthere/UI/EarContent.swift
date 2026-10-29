@@ -236,8 +236,10 @@ struct RightEarContent: View {
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
                         TrackText(snapshot: snapshot)
+                            .revealedByEarEdge(.right, model: model)
                         Spacer(minLength: 0)
                         TransportControls(model: music, isPlaying: snapshot.isPlaying, size: 12)
+                            .ridesEarEdge(.right, model: model)
                     }
                     .padding(.leading, h + 4)
                     .padding(.trailing, 10)
@@ -246,8 +248,10 @@ struct RightEarContent: View {
                 if let snapshot = music.current {
                     HStack(spacing: 8) {
                         TrackText(snapshot: snapshot)
+                            .revealedByEarEdge(.right, model: model)
                         Spacer(minLength: 0)
                         TransportControls(model: music, isPlaying: snapshot.isPlaying, size: 12)
+                            .ridesEarEdge(.right, model: model)
                     }
                     .padding(.leading, h + 4)
                     .padding(.trailing, 10)

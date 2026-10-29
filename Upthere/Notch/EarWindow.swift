@@ -197,6 +197,9 @@ final class EarWindow {
         if !panel.isVisible { panel.orderFrontRegardless() }
     }
 
+    /// Where the ear's edge is on screen right now (mid-spring included).
+    var presentedEar: CGFloat { motion?.state(at: CACurrentMediaTime()).position ?? ear }
+
     var contentView: NSView { container }
 }
 

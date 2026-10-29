@@ -840,3 +840,17 @@ struct ChipHoverTests {
         #expect(model.hoveredChip == nil)
     }
 }
+
+struct RubberBandTests {
+    @Test func followsApplesCurve() {
+        // Values from Apple's curve at c 0.55 on an 844 pt view.
+        #expect(abs(RubberBand.offset(100, limit: 844, c: 0.55) - 51.6) < 0.1)
+        #expect(abs(RubberBand.offset(844, limit: 844, c: 0.55) - 299.5) < 0.1)
+    }
+
+    @Test func isSymmetricAndBounded() {
+        #expect(RubberBand.offset(-40, limit: 200) == -RubberBand.offset(40, limit: 200))
+        #expect(RubberBand.offset(1_000_000, limit: 200) < 200)
+        #expect(RubberBand.offset(50, limit: 0) == 0)
+    }
+}

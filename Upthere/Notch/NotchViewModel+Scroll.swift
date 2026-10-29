@@ -71,11 +71,16 @@ extension NotchViewModel {
 
     /// Follows the system's scroll direction like any sideways list, at a
     /// gentle 0.6× (trackpad) or 14 pt per wheel notch; momentum glides it.
+    /// A trackpad can pull it past either end, and it springs back when the
+    /// fingers lift (or the momentum runs out).
     func scrubStatus(_ event: NSEvent, with scrubber: MarqueeScrubber) -> Bool {
+        let lifted = event.phase.contains(.ended) || event.phase.contains(.cancelled)
+            || event.momentumPhase.contains(.ended)
+        defer { if lifted { scrubber.release() } }
         let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-        guard abs(dx) > abs(dy) else { return false }
-        let delta = event.hasPreciseScrollingDeltas ? -dx * 0.6 : -dx.sign(14)
-        scrubber.scrub(by: delta)
+        guard abs(dx) > abs(dy) else { return lifted }
+        let precise = event.hasPreciseScrollingDeltas
+        scrubber.scrub(by: precise ? -dx * 0.6 : -dx.sign(14), elastic: precise, momentum: !event.momentumPhase.isEmpty)
         return true
     }
 

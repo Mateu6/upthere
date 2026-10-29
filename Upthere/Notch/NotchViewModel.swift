@@ -56,6 +56,10 @@ final class NotchViewModel {
         self.reminders = reminders ?? RemindersModel(defaults: UserDefaults(suiteName: "upthere.preview") ?? .standard)
         self.geometry = geometry
         observeTrack()
+        nowPlaying.applyTrackChange = { [weak self] old, new, apply in
+            guard let self else { return apply() }
+            self.animatingTrackChange(from: old, to: new, apply)
+        }
     }
 
     // MARK: Track announcements
@@ -135,6 +139,12 @@ final class NotchViewModel {
     /// The chip under the pointer right now (it may just be passing over).
     @ObservationIgnored var pointedChip: TrayChip?
     @ObservationIgnored var chipSettleTask: Task<Void, Never>?
+    /// Where an ear's edge is on screen right now (its mask mid-spring),
+    /// from the ear windows.
+    @ObservationIgnored var presentedEarWidth: (NotchSide) -> CGFloat = { _ in 0 }
+    /// The pointer is on Claude's piece right now (it may be passing through).
+    @ObservationIgnored var claudePiecePointed = false
+    @ObservationIgnored var claudePieceSettleTask: Task<Void, Never>?
 
     /// The pointer is on Claude's piece: it widens to fit time and usage.
     /// A chat picked by scrolling goes back to the most active one a little
@@ -182,7 +192,7 @@ final class NotchViewModel {
 
     func setMode(_ side: NotchSide, _ new: EarMode) {
         switch side {
-        case .left: if leftMode != new { leftMode = new }
+        case .left: if leftMode != new { animatingLeftMode(to: new) { leftMode = new } }
         case .right: if rightMode != new { rightMode = new }
         case .center: return
         }

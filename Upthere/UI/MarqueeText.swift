@@ -2,17 +2,26 @@ import SwiftUI
 
 /// Lets the user scroll a rolling line sideways (fed by the notch's scroll
 /// handler). While they scroll, the line follows them; about a second after
-/// they stop, it keeps rolling from wherever they left it.
+/// they stop, it keeps rolling from wherever they left it. Trackpad scrolls
+/// past either end stretch on the rubber band and spring back on release.
 @Observable
 final class MarqueeScrubber {
     /// Bumped on every scroll event.
     private(set) var tick = 0
+    /// Bumped when the fingers lift or momentum ends.
+    private(set) var releases = 0
     private(set) var isScrubbing = false
+    /// Whether the latest scroll may pull past an end (trackpad, not wheel).
+    @ObservationIgnored private(set) var elastic = false
+    /// Whether the latest scroll is momentum after the fingers lifted.
+    @ObservationIgnored private(set) var momentum = false
     @ObservationIgnored private var pending: CGFloat = 0
     @ObservationIgnored private var endTask: Task<Void, Never>?
 
-    func scrub(by delta: CGFloat) {
+    func scrub(by delta: CGFloat, elastic: Bool = false, momentum: Bool = false) {
         pending += delta
+        self.elastic = elastic
+        self.momentum = momentum
         tick &+= 1
         if !isScrubbing { isScrubbing = true }
         endTask?.cancel()
@@ -22,6 +31,8 @@ final class MarqueeScrubber {
             self?.isScrubbing = false
         }
     }
+
+    func release() { releases &+= 1 }
 
     func take() -> CGFloat {
         defer { pending = 0 }
@@ -52,6 +63,9 @@ struct MarqueeText: View {
     /// the user takes over mid-glide.
     @State private var glide: Glide?
     @State private var rolledText: String?
+    /// Where the user's scrolling has taken the line, unclamped. Past either
+    /// end, `offset` shows it on the rubber band.
+    @State private var pulled: CGFloat = 0
 
     private struct Glide {
         var from: CGFloat
@@ -94,7 +108,9 @@ struct MarqueeText: View {
                             guard !scrubbing else { return }
                             await roll(overflow)
                         }
-                        .onChange(of: scrubber?.tick ?? 0) { applyScrub(overflow) }
+                        .onChange(of: scrubber?.tick ?? 0) { applyScrub(overflow, width: proxy.size.width) }
+                        .onChange(of: scrubber?.releases ?? 0) { springBack(overflow) }
+                        .onChange(of: scrubbing) { _, now in if !now { springBack(overflow) } }
                 }
             }
     }
@@ -134,14 +150,31 @@ struct MarqueeText: View {
         withTransaction(transaction) { offset = current }
     }
 
-    private func applyScrub(_ overflow: CGFloat) {
-        let delta = scrubber?.take() ?? 0
+    private func applyScrub(_ overflow: CGFloat, width: CGFloat) {
+        guard let scrubber else { return }
+        let delta = scrubber.take()
         guard overflow > 1, delta != 0 else { return }
-        if glide != nil { freeze() }
         let travel = overflow + Self.fade
+        if glide != nil { freeze() }
+        // Unless it's stretched past an end, pick up from what's on screen.
+        if (0...travel).contains(offset) { pulled = offset }
+        let inside = min(travel, max(0, pulled))
+        // Momentum doesn't carry on past an end the fingers already let go at.
+        if scrubber.momentum && pulled != inside { return }
+        pulled = scrubber.elastic ? pulled + delta : min(travel, max(0, pulled + delta))
+        let edge = min(travel, max(0, pulled))
         withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 1)) {
-            offset = min(travel, max(0, offset + delta))
+            offset = edge + RubberBand.offset(pulled - edge, limit: width)
         }
+    }
+
+    /// Past an end when the fingers lift: spring back to it, keeping the
+    /// speed the line already has.
+    private func springBack(_ overflow: CGFloat) {
+        let edge = min(overflow + Self.fade, max(0, pulled))
+        guard pulled != edge else { return }
+        pulled = edge
+        withAnimation(Theme.Springs.release) { offset = edge }
     }
 
     /// Pause, glide to the end, pause, glide back; repeat. Picks up from the

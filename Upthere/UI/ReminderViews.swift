@@ -153,7 +153,7 @@ struct ReminderChip: View {
             pointing = inside
             model.hoverChip(.reminder(item.id), inside: inside)
         }
-        .animation(.easeOut(duration: 0.12), value: pointing)
+        .animation(Theme.Springs.hover, value: pointing)
         .onDisappear { model.chipGone(.reminder(item.id)) }
         .animation(.smooth(duration: 0.2), value: done)
         // Changed in Reminders (renamed, due moved, list or overdue colour).
