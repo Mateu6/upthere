@@ -251,6 +251,14 @@ extension NotchViewModel {
     /// there on hover.
     func tap(_ side: NotchSide) {
         guard side != .center, !showsMusic(side) else { return }
+        // A chat waiting on you: clicking its peek goes straight to it,
+        // like the ↗ beside the title.
+        if side == .left, case .claudeDetail(expanded: false) = content.left, !answerShown,
+            let session = selectedSession, session.needsYou
+        {
+            claude.focus(session)
+            return
+        }
         openTasks.removeValue(forKey: side)?.cancel()
         if mode(side) == .expanded {
             setMode(side, .peek)
