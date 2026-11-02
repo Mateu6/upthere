@@ -1,7 +1,8 @@
 # Upthere design language
 
-Status: **direction chosen, being rolled out** (2026-10-16). The icon is
-parked (see `parked.md`).
+Status: **direction chosen, being rolled out** (2026-10-16). Colour round 2
+(Midnight) is built (2026-11-02). The icon has a code-drawn stand-in (see
+`parked.md`).
 
 ## Colour brief (round 2, 2026-11-02)
 
@@ -18,8 +19,9 @@ base of every `Theme.Ink` step, `Theme.secondary` and the ear root's
 foreground; `Theme.midnight` is the Glass base (at `glassBase` 0.3);
 `Theme.toneC` 0.10 is the shared status/timer/reminder chroma
 (`Theme.tone(hue:)`); `Theme.metalPalette` is the tint with no colour of its
-own. Classic ears stay `Color.black`. The icon has not been redone in
-Midnight yet.
+own. Classic ears stay `Color.black`. The icon (`scripts/make-icon.swift`)
+uses the same Midnight values: a blue metal sky, a space-black laptop, and the
+one amber glow on the screen's horizon and the left ear.
 
 Mateusz decided to change the palette (2026-11-02), after picking the
 space-black tilted MacBook as the icon direction. The dusk stops being the
