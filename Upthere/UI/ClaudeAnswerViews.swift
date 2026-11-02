@@ -82,7 +82,7 @@ struct ClaudeAnswerRow: View {
     }
 
     private var tone: Color {
-        guard echo == nil, let request else { return .white }
+        guard echo == nil, let request else { return Theme.ink }
         if case .permission = request.kind { return Color(nsColor: Theme.amber) }
         return Color(nsColor: Theme.input)
     }
@@ -260,7 +260,7 @@ private struct AnswerChipStyle: ButtonStyle {
 
         private func fill(pressed: Bool) -> Color {
             if prominent { return Color(nsColor: tint ?? Theme.claude) }
-            let base = tint.map { Color(nsColor: $0) } ?? .white
+            let base = tint.map { Color(nsColor: $0) } ?? Theme.ink
             let opacity = pressed ? Theme.Ink.pressedOpacity : hovering || selected ? Theme.Ink.hoverOpacity : 0
             return base.opacity(opacity)
         }

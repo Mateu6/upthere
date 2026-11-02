@@ -28,7 +28,7 @@ struct LeftEarContent: View {
         ZStack(alignment: .trailing) {
             ZStack {
                 if let hud = model.hud, model.showsHUD(on: .left), let snapshot = music.current {
-                    MusicHUDView(hud: hud, snapshot: snapshot, tint: music.artwork?.tint ?? .white, trailing: h + 4)
+                    MusicHUDView(hud: hud, snapshot: snapshot, tint: music.artwork?.tint ?? Theme.inkNS, trailing: h + 4)
                         .transition(.blurReplace)
                 } else {
                     details(h: h, music: music)
@@ -155,7 +155,7 @@ struct RightEarContent: View {
 
     var body: some View {
         let music = model.nowPlaying
-        let tint = music.artwork?.tint ?? .white
+        let tint = music.artwork?.tint ?? Theme.inkNS
         let h = model.geometry.height
         ZStack(alignment: .leading) {
             ZStack {
@@ -329,7 +329,7 @@ struct MusicHUDView: View {
         HStack(spacing: 8) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.ink)
                 .frame(width: 18)
                 .contentTransition(.symbolEffect(.replace))
             GeometryReader { proxy in

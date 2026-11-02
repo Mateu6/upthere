@@ -3,6 +3,46 @@
 Status: **direction chosen, being rolled out** (2026-10-16). The icon is
 parked (see `parked.md`).
 
+## Colour brief (round 2, 2026-11-02)
+
+**Chosen: Midnight.** The metal leans blue (neutral ramp h 258, peak C 0.035,
+even L steps 0.14 → 0.74). The ink is Starlight (L 0.93 C 0.027 h 80), the
+one warm glow is amber (L 0.80 C 0.12 h 62), and the Glass base is
+L 0.20 C 0.03 h 260. The status set is L 0.78 C 0.10 at the same hues, and the
+timers are L 0.80 C 0.10. Blue steel (too colourless) and Space Black (ember
+glow) were not picked. Comparison page:
+https://claude.ai/artifact/8xrURBjF5zeXufi5WRnzL4
+
+**As built** (`UI/Palette.swift`): `Theme.ink` / `inkNS` (Starlight) is the
+base of every `Theme.Ink` step, `Theme.secondary` and the ear root's
+foreground; `Theme.midnight` is the Glass base (at `glassBase` 0.3);
+`Theme.toneC` 0.10 is the shared status/timer/reminder chroma
+(`Theme.tone(hue:)`); `Theme.metalPalette` is the tint with no colour of its
+own. Classic ears stay `Color.black`. The icon has not been redone in
+Midnight yet.
+
+Mateusz decided to change the palette (2026-11-02), after picking the
+space-black tilted MacBook as the icon direction. The dusk stops being the
+identity.
+
+**References:** Apple finishes. Space Black (≈ L 0.30 C 0.005), Midnight
+(≈ L 0.33 C 0.024 h 258), a dark steel with a blue tint (≈ L 0.38 C 0.027
+h 257) and Starlight (≈ L 0.93 C 0.027 h 80). All four are tinted neutrals:
+the character comes from which way the grey leans, not from chroma.
+
+**Where it lives:** the inks (text, icons, tracks, hover and press), the Glass
+theme's base, the icon and the README. Classic ears stay pure #000 so they
+still match the physical notch.
+
+**Decided:**
+- **Starlight is the "white".** Every ink step is Starlight at the existing
+  opacities instead of pure white.
+- **One warm glow.** The dusk is reduced to a single warm light source (the
+  icon's screen, the lit ear). Everything else is metal.
+- **Status colours are retuned to the metal.** They stay a matched set with
+  the same hues, at a lower chroma and a lightness that sits calmly on steel
+  and midnight.
+
 ## Decisions (round 1)
 
 - **Ears: direction B, Instrument.** Titles 12 Medium (−0.005em), secondary

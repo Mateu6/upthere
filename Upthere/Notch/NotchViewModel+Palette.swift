@@ -5,7 +5,7 @@ extension NotchViewModel {
     static let claudePalette = [Theme.claude] + Theme.gradient(from: Theme.claudeTone).dropFirst()
     static let attentionPalette = Theme.gradient(from: Theme.permissionTone)
     static let inputPalette = Theme.gradient(from: Theme.inputTone)
-    static let neutralPalette = [0.93, 0.8, 0.67].map { OKLCH($0, 0, 0).nsColor }
+    static let neutralPalette = Theme.metalPalette
 
     var musicPalette: [NSColor] { nowPlaying.artwork?.palette ?? Self.neutralPalette }
 

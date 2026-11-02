@@ -61,7 +61,7 @@ final class TimerRingNSView: NSView {
             layer.lineCap = .round
             self.layer?.addSublayer(layer)
         }
-        track.strokeColor = NSColor.white.withAlphaComponent(Theme.Ink.trackOpacity).cgColor
+        track.strokeColor = Theme.inkNS.withAlphaComponent(Theme.Ink.trackOpacity).cgColor
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -120,7 +120,7 @@ struct TimerTime: View {
     let timer: TrackedTimer
     var compact = false
     var font: Font = Theme.TextStyle.readout.font
-    var color: Color = .white
+    var color: Color = Theme.ink
 
     var body: some View {
         // Compact text changes at most every 15 s until the last minute.

@@ -85,7 +85,7 @@ struct PausedTrackLine: View {
         MarqueeText(
             text: "\(snapshot.title) · \(snapshot.artist)",
             font: Theme.TextStyle.title.font,
-            label: Text("\(Text(snapshot.title).fontWeight(.medium).foregroundStyle(.white))\(artist)"))
+            label: Text("\(Text(snapshot.title).fontWeight(.medium).foregroundStyle(Theme.ink))\(artist)"))
     }
 }
 
@@ -126,7 +126,7 @@ private struct TransportButton: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.ink)
                 .contentTransition(.symbolEffect(.replace.downUp.byLayer))
                 .modifier(SkipNudge(bounce: bounce, taps: taps))
                 .frame(width: 24, height: 24)
@@ -200,8 +200,8 @@ struct HoverButtonStyle: ButtonStyle {
 struct RowButtonStyle: ButtonStyle {
     var cornerRadius: CGFloat = 6
     var highlighted = false
-    /// White in the notch; `.primary` in regular windows.
-    var tint: Color = .white
+    /// Starlight in the notch; `.primary` in regular windows.
+    var tint: Color = Theme.ink
 
     func makeBody(configuration: Configuration) -> some View {
         RowButtonBody(configuration: configuration, cornerRadius: cornerRadius, highlighted: highlighted, tint: tint)

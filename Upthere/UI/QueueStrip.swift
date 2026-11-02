@@ -70,7 +70,7 @@ struct QueueStrip: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(item.title)
                         .font(Theme.TextStyle.label.font)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.ink)
                     Text(item.artist)
                         .font(Theme.TextStyle.caption.font)
                         .foregroundStyle(Theme.secondary)

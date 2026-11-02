@@ -104,23 +104,38 @@ struct OKLCH: Equatable, Sendable {
 }
 
 extension Theme {
+    // MARK: Midnight
+    // Apple's finishes as tinted neutrals (docs/design-language.md, colour
+    // round 2): blue-leaning metal, Starlight as the white, one warm glow.
+
+    /// Starlight: the "white" of the notch. Every ink step below is this
+    /// colour at a fixed strength.
+    static let starlightTone = OKLCH(0.93, 0.027, 80)
+    static let ink = starlightTone.color
+    static let inkNS = starlightTone.nsColor
+    /// Midnight: the metal under the Glass theme's text, and the lean of
+    /// every neutral (h 258).
+    static let midnightTone = OKLCH(0.20, 0.03, 260)
+    static let midnight = midnightTone.color
+
     // MARK: Status colours
     // A matched set: same lightness and chroma, only the hue differs, so no
     // state looks louder than another just because of its colour.
 
-    private static let statusL = 0.77
-    private static let statusC = 0.13
+    private static let statusL = 0.78
+    /// Calmer than pure "on black" colours, so they sit on the metal.
+    nonisolated static let toneC = 0.10
 
     /// Claude needs permission.
-    static let permissionTone = OKLCH(statusL, statusC, 75)
+    static let permissionTone = OKLCH(statusL, toneC, 75)
     /// Claude is asking you something: the same yellow as a permission,
     /// like the Claude app's "needs your input" dot. The ✋ / ? marks tell
     /// the two apart, so colour is never the only signal.
     static let inputTone = permissionTone
     /// Finished.
-    static let successTone = OKLCH(statusL, statusC, 150)
+    static let successTone = OKLCH(statusL, toneC, 150)
     /// A limit is nearly used up.
-    static let dangerTone = OKLCH(statusL, statusC, 25)
+    static let dangerTone = OKLCH(statusL, toneC, 25)
 
     static let amber = permissionTone.nsColor
     static let input = inputTone.nsColor
@@ -132,26 +147,26 @@ extension Theme {
     static let settingsError = Color(nsColor: .systemRed)
 
     // MARK: Neutrals
-    // White on black at a few fixed strengths. Every translucent white in
+    // Starlight on black at a few fixed strengths. Every translucent ink in
     // the notch comes from here.
 
     enum Ink {
         /// A barely-there wash (a hovered piece's background).
-        static let faint = Color.white.opacity(0.07)
+        static let faint = ink.opacity(0.07)
         /// Placeholders (a cover that hasn't loaded).
-        static let placeholder = Color.white.opacity(0.12)
+        static let placeholder = ink.opacity(0.12)
         /// Tracks behind progress, rings and dividers.
-        static let track = Color.white.opacity(0.16)
+        static let track = ink.opacity(0.16)
         /// A control under the pointer.
-        static let hover = Color.white.opacity(0.14)
+        static let hover = ink.opacity(0.14)
         /// A control being pressed.
-        static let pressed = Color.white.opacity(0.22)
+        static let pressed = ink.opacity(0.22)
         /// Icons that aren't the focus (pager arrows, +).
-        static let icon = Color.white.opacity(0.85)
+        static let icon = ink.opacity(0.85)
         /// Placeholder glyphs.
-        static let glyph = Color.white.opacity(0.55)
+        static let glyph = ink.opacity(0.55)
         /// Small count badges with dark text on them.
-        static let badge = Color.white.opacity(0.7)
+        static let badge = ink.opacity(0.7)
 
         static let hoverOpacity = 0.14
         static let pressedOpacity = 0.22
@@ -168,5 +183,12 @@ extension Theme {
 
     /// Six timer colours: one lightness and chroma, hues spread around the
     /// wheel so neighbours are easy to tell apart.
-    static let timerTones: [OKLCH] = [235, 58, 142, 345, 300, 95].map { OKLCH(0.80, 0.12, $0) }
+    static let timerTones: [OKLCH] = [235, 58, 142, 345, 300, 95].map(tone(hue:))
+
+    /// A list or timer colour at the shared lightness and chroma.
+    nonisolated static func tone(hue: Double) -> OKLCH { OKLCH(0.80, toneC, hue) }
+
+    /// Light Midnight metal, for tints with no colour of their own (music
+    /// without a cover, an empty tray).
+    static let metalPalette = [0.93, 0.8, 0.67].map { OKLCH($0, 0.02, 258).nsColor }
 }

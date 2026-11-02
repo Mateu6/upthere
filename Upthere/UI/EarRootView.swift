@@ -34,15 +34,15 @@ enum Theme {
     static let claude = NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1)
     /// The brand colour as OKLCH, for building palettes around it.
     static let claudeTone = OKLCH(claude)!
-    static let secondary = Color.white.opacity(0.56)
+    static let secondary = ink.opacity(0.56)
     static let earRadius: CGFloat = 10
     /// Concave flare where an ear meets the screen's top edge.
     static let shoulderRadius: CGFloat = 6
     /// Bottom corner radius used to hide the black filler inside the physical notch.
     static let notchCornerRadius: CGFloat = 12
-    /// Glass theme strength: the smoky base under the text, the cover-colour
-    /// wash along the bottom, and the tint of the glass itself.
-    static let glassBase: Double = 0.24
+    /// Glass theme strength: the Midnight base under the text, the
+    /// cover-colour wash along the bottom, and the tint of the glass itself.
+    static let glassBase: Double = 0.3
     static let glassWash: Double = 0.45
     static let glassTint: Double = 0.35
 
@@ -80,6 +80,7 @@ struct EarRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        .foregroundStyle(Theme.ink)
         .contextMenu {
             Button("Settings…", action: actions.openSettings)
             Button("Check for Updates…", action: actions.checkForUpdates)
@@ -256,9 +257,9 @@ struct GlassFill: View {
             let inner: UnitPoint = side == .left ? .trailing : .leading
             let outer: UnitPoint = side == .left ? .leading : .trailing
             ZStack {
-                // A smoky base inside the glass: the thick, legible glass of
-                // "Instrument", so white text reads on any wallpaper.
-                shape.fill(.black.opacity(Theme.glassBase))
+                // A Midnight base inside the glass: the thick, legible glass
+                // of "Instrument", so Starlight text reads on any wallpaper.
+                shape.fill(Theme.midnight.opacity(Theme.glassBase))
                 if tinted {
                     // A wash of the cover's colors along the bottom.
                     shape

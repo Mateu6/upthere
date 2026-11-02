@@ -404,7 +404,7 @@ struct ClaudeToolDetail: View {
     private var lineColor: Color {
         switch session.activity {
         case .permission, .input: session.statusColor
-        default: .white
+        default: Theme.ink
         }
     }
 
@@ -437,7 +437,7 @@ struct ClaudeBadge: View {
                     let waitColor = model.waitingElsewhere?.activity.waitColor
                     Text("\(count)")
                         .font(Theme.TextStyle.badge.font.monospacedDigit())
-                        .foregroundStyle(waitColor == nil ? .white : .black)
+                        .foregroundStyle(waitColor == nil ? Theme.ink : .black)
                         .contentTransition(.numericText())
                         .padding(.horizontal, 3)
                         .frame(minWidth: 12, minHeight: 12)

@@ -11,7 +11,7 @@ nonisolated struct ReminderList: Identifiable, Equatable, Hashable, Sendable {
     /// The list's hue; shown at the ears' lightness and chroma (as timers).
     var hue: Double
 
-    var tone: OKLCH { OKLCH(0.80, 0.12, hue) }
+    var tone: OKLCH { Theme.tone(hue: hue) }
 }
 
 /// A reminder as the notch and the panel show it: a copy, so nothing holds
