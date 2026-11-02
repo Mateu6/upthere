@@ -241,7 +241,7 @@ final class ProgressLineNSView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        track.backgroundColor = NSColor.white.withAlphaComponent(Theme.Ink.trackOpacity).cgColor
+        track.backgroundColor = Theme.inkNS.withAlphaComponent(Theme.Ink.trackOpacity).cgColor
         fill.anchorPoint = CGPoint(x: 0, y: 0.5)
         layer?.addSublayer(track)
         layer?.addSublayer(fill)
@@ -314,7 +314,7 @@ final class ClaudeSparkNSView: NSView {
     private let shape = CAShapeLayer()
     private var style: ClaudeSparkView.Style?
     private var lastSize: CGSize = .zero
-    private var color: NSColor = .white
+    private var color: NSColor = Theme.inkNS
 
     override init(frame: NSRect) {
         super.init(frame: frame)

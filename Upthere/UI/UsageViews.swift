@@ -125,9 +125,9 @@ enum UsageInfo {
     static func color(for level: Double?) -> Color {
         guard let level else { return Theme.secondary }
         if level >= 0.9 { return Theme.danger }
-        // Nearly there: full white rather than amber, which means "needs
+        // Nearly there: full ink rather than amber, which means "needs
         // permission" in the notch.
-        if level >= 0.75 { return .white }
+        if level >= 0.75 { return Theme.ink }
         return Theme.secondary
     }
 }
@@ -185,7 +185,7 @@ struct UsageSummary: View {
             VStack(alignment: .trailing, spacing: 0) {
                 Text(model.claude.planName.map { "Claude \($0)" } ?? "Claude")
                     .font(Theme.TextStyle.title.font)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.ink)
                 UsageChipsView(chips: chips)
             }
             .lineLimit(1)

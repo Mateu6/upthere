@@ -47,7 +47,7 @@ final class MarqueeScrubber {
 struct MarqueeText: View {
     let text: String
     let font: Font
-    var color: Color = .white
+    var color: Color = Theme.ink
     var alignment: Alignment = .leading
     /// Take only the text's own width (when it fits) instead of all that's
     /// offered, so things beside it stay close.
