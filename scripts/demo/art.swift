@@ -1,7 +1,7 @@
 // Overlay art for demo renders (ffmpeg here has no drawtext):
 //   swift art.swift notch <width-px> <height-px> <radius-px> out.png
 //   swift art.swift caption <width-px> <title> <subtitle|-> out.png
-//   swift art.swift dusk <width-px> <height-px> out.png
+//   swift art.swift midnight <width-px> <height-px> out.png
 import AppKit
 
 func write(_ image: NSBitmapImageRep, to path: String) {
@@ -19,37 +19,44 @@ func canvas(_ width: Int, _ height: Int, draw: (CGContext) -> Void) -> NSBitmapI
     return rep
 }
 
-/// Deep indigo with a glow `glowY` px from the top.
+/// Midnight with the amber glow `glowY` px from the top.
+/// Starlight (L 0.93 C 0.027 h 80): Upthere's "white".
+let starlight = NSColor(srgbRed: 0.947, green: 0.903, blue: 0.832, alpha: 1)
+
 func drawBackdrop(_ ctx: CGContext, _ w: Int, _ h: Int, glowY: CGFloat) {
+    // Midnight (docs/design-language.md, colour round 2): the blue-leaning metal, darkest at the edges,
+    // and the one warm amber glow where the notch strip sits.
     let space = CGColorSpaceCreateDeviceRGB()
     let base = CGGradient(colorsSpace: space, colors: [
-        CGColor(red: 0.035, green: 0.035, blue: 0.075, alpha: 1),
-        CGColor(red: 0.075, green: 0.06, blue: 0.16, alpha: 1),
-        CGColor(red: 0.03, green: 0.03, blue: 0.06, alpha: 1),
+        CGColor(red: 0.009, green: 0.023, blue: 0.054, alpha: 1),
+        CGColor(red: 0.058, green: 0.096, blue: 0.153, alpha: 1),
+        CGColor(red: 0.006, green: 0.013, blue: 0.032, alpha: 1),
     ] as CFArray, locations: [0, 0.45, 1])!
     ctx.drawLinearGradient(base, start: CGPoint(x: 0, y: CGFloat(h)), end: .zero, options: [])
-    let glow = CGGradient(colorsSpace: space, colors: [
-        CGColor(red: 0.42, green: 0.40, blue: 0.95, alpha: 0.38),
-        CGColor(red: 0.42, green: 0.40, blue: 0.95, alpha: 0),
-    ] as CFArray, locations: [0, 1])!
-    let center = CGPoint(x: CGFloat(w) / 2, y: CGFloat(h) - glowY)
-    ctx.drawRadialGradient(glow, startCenter: center, startRadius: 0, endCenter: center,
-                           endRadius: CGFloat(max(w, h)) * 0.5, options: [])
+    drawGlow(ctx, w, h, at: CGPoint(x: CGFloat(w) / 2, y: CGFloat(h) - glowY), radius: CGFloat(max(w, h)) * 0.26, alpha: 0.20)
 }
 
-/// Upthere's dusk: violet at the top, pink, warm orange at the foot. The same OKLCH stops as the
-/// Upthere card on tworstwo.com (violet 45% 0.17 290, pink 62% 0.2 350, orange 78% 0.14 55),
-/// so a video on this backdrop sits seamlessly on the card.
-func drawDusk(_ ctx: CGContext, _ w: Int, _ h: Int) {
+/// Upthere's one warm light: amber (L 0.80 C 0.12 h 62), fading out.
+func drawGlow(_ ctx: CGContext, _ w: Int, _ h: Int, at center: CGPoint, radius: CGFloat, alpha: CGFloat) {
     let space = CGColorSpaceCreateDeviceRGB()
-    let dusk = CGGradient(colorsSpace: space, colors: [
-        CGColor(red: 0.346, green: 0.230, blue: 0.669, alpha: 1),
-        CGColor(red: 0.846, green: 0.266, blue: 0.591, alpha: 1),
-        CGColor(red: 0.985, green: 0.617, blue: 0.349, alpha: 1),
-    ] as CFArray, locations: [0, 0.55, 1])!
-    // Origin is bottom-left: a slight diagonal from the top towards the foot, like the card's 170°.
-    ctx.drawLinearGradient(dusk, start: CGPoint(x: CGFloat(w) * 0.45, y: CGFloat(h)),
-                           end: CGPoint(x: CGFloat(w) * 0.55, y: 0), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+    let glow = CGGradient(colorsSpace: space, colors: [
+        CGColor(red: 0.961, green: 0.673, blue: 0.411, alpha: alpha),
+        CGColor(red: 0.961, green: 0.673, blue: 0.411, alpha: 0),
+    ] as CFArray, locations: [0, 1])!
+    ctx.drawRadialGradient(glow, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
+}
+
+func drawMidnight(_ ctx: CGContext, _ w: Int, _ h: Int) {
+    // The card backdrop: the Midnight metal, lighter at the top where the strip sits, with the amber
+    // glow just under the notch, the way the icon's screen is lit.
+    let space = CGColorSpaceCreateDeviceRGB()
+    let metal = CGGradient(colorsSpace: space, colors: [
+        CGColor(red: 0.180, green: 0.211, blue: 0.258, alpha: 1),
+        CGColor(red: 0.058, green: 0.096, blue: 0.153, alpha: 1),
+        CGColor(red: 0.009, green: 0.023, blue: 0.054, alpha: 1),
+    ] as CFArray, locations: [0, 0.5, 1])!
+    ctx.drawLinearGradient(metal, start: CGPoint(x: 0, y: CGFloat(h)), end: .zero, options: [])
+    drawGlow(ctx, w, h, at: CGPoint(x: CGFloat(w) / 2, y: CGFloat(h) * 0.82), radius: CGFloat(w) * 0.26, alpha: 0.22)
 }
 
 let args = CommandLine.arguments
@@ -83,12 +90,12 @@ case "caption":
     center.alignment = .center
     let titleText = NSAttributedString(string: title, attributes: [
         .font: NSFont.systemFont(ofSize: 76 * scale, weight: .bold),
-        .foregroundColor: NSColor.white, .paragraphStyle: center, .kern: -1.2 * scale,
+        .foregroundColor: starlight, .paragraphStyle: center, .kern: -1.2 * scale,
     ])
     let subtitleText = subtitle.map {
         NSAttributedString(string: $0, attributes: [
             .font: NSFont.systemFont(ofSize: 40 * scale, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.62), .paragraphStyle: center,
+            .foregroundColor: starlight.withAlphaComponent(0.62), .paragraphStyle: center,
         ])
     }
     let inset = 72 * scale
@@ -106,13 +113,13 @@ case "caption":
     }
     write(image, to: args[5])
 
-case "dusk":
-    // The card backdrop: dusk only, no glow, no footer (the card carries the words).
+case "midnight":
+    // The card backdrop: Midnight with its glow, no footer (the card carries the words).
     let (w, h) = (Int(args[2])!, Int(args[3])!)
-    write(canvas(w, h) { ctx in drawDusk(ctx, w, h) }, to: args[4])
+    write(canvas(w, h) { ctx in drawMidnight(ctx, w, h) }, to: args[4])
 
 case "backdrop":
-    // Deep indigo, a glow where the notch strip sits, the repo at the foot.
+    // Midnight, the amber glow where the notch strip sits, the repo at the foot.
     let (w, h, glowY, footerY) = (Int(args[2])!, Int(args[3])!, CGFloat(Double(args[4])!), CGFloat(Double(args[5])!))
     let footer = args[6] == "-" ? nil : args[6]
     let image = canvas(w, h) { ctx in
@@ -122,12 +129,12 @@ case "backdrop":
         center2.alignment = .center
         let scale = CGFloat(min(w, h)) / 1080
         let mark = NSMutableAttributedString(string: "upthere", attributes: [
-            .font: NSFont.systemFont(ofSize: 44 * scale, weight: .bold), .foregroundColor: NSColor.white,
+            .font: NSFont.systemFont(ofSize: 44 * scale, weight: .bold), .foregroundColor: starlight,
             .paragraphStyle: center2, .kern: -0.6 * scale,
         ])
         mark.append(NSAttributedString(string: "\n" + footer, attributes: [
             .font: NSFont.monospacedSystemFont(ofSize: 26 * scale, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.5), .paragraphStyle: center2,
+            .foregroundColor: starlight.withAlphaComponent(0.5), .paragraphStyle: center2,
         ]))
         mark.draw(with: CGRect(x: 0, y: footerY, width: CGFloat(w), height: 120 * scale),
                   options: .usesLineFragmentOrigin)
@@ -144,7 +151,7 @@ case "card":
         let center = NSMutableParagraphStyle()
         center.alignment = .center
         let text = NSMutableAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: 120 * scale, weight: .heavy), .foregroundColor: NSColor.white,
+            .font: NSFont.systemFont(ofSize: 120 * scale, weight: .heavy), .foregroundColor: starlight,
             .paragraphStyle: center, .kern: -3 * scale,
         ])
         let lines = NSMutableParagraphStyle()
@@ -152,7 +159,7 @@ case "card":
         lines.paragraphSpacingBefore = 18 * scale
         text.append(NSAttributedString(string: "\n" + subtitle, attributes: [
             .font: NSFont.systemFont(ofSize: 46 * scale, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.72), .paragraphStyle: lines,
+            .foregroundColor: starlight.withAlphaComponent(0.72), .paragraphStyle: lines,
         ]))
         if small != "-" {
             let gap = NSMutableParagraphStyle()
@@ -160,7 +167,7 @@ case "card":
             gap.paragraphSpacingBefore = 44 * scale
             text.append(NSAttributedString(string: "\n" + small, attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 32 * scale, weight: .medium),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.5), .paragraphStyle: gap,
+                .foregroundColor: starlight.withAlphaComponent(0.5), .paragraphStyle: gap,
             ]))
         }
         let inset = 80 * scale
@@ -181,6 +188,6 @@ case "card":
 
 default:
     print("usage: art.swift notch W H R out.png | caption W title subtitle|- out.png"
-        + " | dusk W H out.png | backdrop W H glowY footerY footer|- out.png | card W H icon|- title subtitle small|- out.png")
+        + " | midnight W H out.png | backdrop W H glowY footerY footer|- out.png | card W H icon|- title subtitle small|- out.png")
     exit(1)
 }

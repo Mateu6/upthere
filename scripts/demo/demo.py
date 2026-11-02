@@ -285,12 +285,11 @@ def claude_expanded(d):
 
 @scene("Now playing, up there", "Artwork, controls and a live visualizer on hover.")
 def music_hover(d):
-    """Hover the music ear, scrub the seek bar, change volume."""
+    """Hover the music ear, then change the volume."""
     d.start_music()
     d.wait(1.5)
-    d.notch("peek-right"); d.camera("right"); d.wait(2.2)
-    d.notch("seek-active"); d.wait(1.4)
-    d.notch("seek-end"); d.wait(1.2)
+    d.notch("peek-right"); d.camera("right"); d.wait(2.6)
+    # No seek preview here: since the Instrument redesign it collapses the peeked ear.
     d.notch("hud-volume"); d.wait(2.2)
     d.notch("collapsed"); d.camera("wide"); d.wait(1.0)
 
@@ -440,8 +439,8 @@ REPO = "github.com/Mateu6/upthere"
 # canvas, where the band sits, caption on/off, footer distance from the bottom
 LAYOUTS = {
     # tworstwo.com card cover: the strip at the very top like a real screen, larger, on the
-    # dusk backdrop that matches the Upthere card, no words (the card carries them).
-    "card": dict(size=(1920, 1080), band_top=0, caption=False, footer=None, band=0.2, backdrop="dusk"),
+    # Midnight backdrop that matches the Upthere card, no words (the card carries them).
+    "card": dict(size=(1920, 1080), band_top=0, caption=False, footer=None, band=0.2, backdrop="midnight"),
     "reel": dict(size=(1080, 1920), band_top=640, caption=True, footer=420),
     "wide": dict(size=(1920, 1080), band_top=300, caption=True, footer=60),
     "square": dict(size=(1080, 1080), band_top=290, caption=True, footer=70),
@@ -469,7 +468,7 @@ def camera_expressions(name, fps):
 
 def render(name, formats):
     """Every format is the menu-bar strip of the take (the ears never go
-    below it) on the indigo backdrop: whatever is on the desktop under the
+    below it) on the Midnight backdrop: whatever is on the desktop under the
     menu bar never reaches an output."""
     meta = json.loads((RAW / f"{name}.json").read_text())
     spec = SCENES[name]
@@ -484,13 +483,13 @@ def render(name, formats):
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", movie],
         capture_output=True, text=True).stdout) - meta["lead"]
 
-    def composite(canvas, band_top, camera, fps, caption=None, footer=None, band=BAND, backdrop="indigo"):
+    def composite(canvas, band_top, camera, fps, caption=None, footer=None, band=BAND, backdrop="metal"):
         """Filter graph and extra inputs: strip → camera → onto the backdrop."""
         cw, ch = canvas
         band_h = even(cw * band)
         bg = CACHE / f"backdrop-{backdrop}-{cw}x{ch}-{band_top}-{footer}.png"
-        if backdrop == "dusk":
-            art("dusk", cw, ch, bg)
+        if backdrop == "midnight":
+            art("midnight", cw, ch, bg)
         else:
             art("backdrop", cw, ch, band_top + band_h / 3, footer or 0, REPO if footer else "-", bg)
         centre, width = camera
@@ -537,7 +536,7 @@ def render(name, formats):
         out = OUT / f"{name}-{fmt}.mp4"
         ffmpeg(*composite(layout["size"], layout["band_top"], camera_expressions(name, 60), 60,
                           caption=caption if layout["caption"] else None, footer=layout["footer"],
-                          band=layout.get("band", BAND), backdrop=layout.get("backdrop", "indigo")),
+                          band=layout.get("band", BAND), backdrop=layout.get("backdrop", "metal")),
                *X264, out)
         print(f"  {fmt:<6} {out.relative_to(ROOT)}")
         if fmt == "card":

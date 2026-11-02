@@ -27,8 +27,14 @@ permission, and **Automation → Spotify** for the music scenes.
 
 ## Before each take
 
+Use the placeholder track, never real music in public clips: `music/midnight-drive.m4a` is a two-minute pad
+synthesised by `music/synth.py` (cover art: `art.swift midnight`). Add it to Music once, then record with
+`--music "Midnight Drive"`. Set `wallpaper-midnight.png` as the desktop picture: the menu bar strip then reads
+as one calm Midnight band and keeps its light text.
+
+
 Every output is just the menu-bar strip of the take (the ears never go below
-it) on an indigo backdrop, so windows and the desktop never show. The menu
+it) on the Midnight backdrop, so windows and the desktop never show. The menu
 bar itself does: keep status items you don't want public out of it, and
 start Spotify on a track with good artwork (or pass `--track spotify:track:…`).
 
