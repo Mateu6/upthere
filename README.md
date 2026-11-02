@@ -4,6 +4,8 @@ A tiny, native macOS notch app: **what's playing**, **what Claude Code is
 doing** and **your timers**, right beside the notch. Hover to peek, click to
 act. It never drops below the notch, so it just looks like the notch grew ears.
 
+![Upthere: Claude Code at work on one side of the notch, the music on the other](docs/media/hero.gif)
+
 - **Now Playing:** Spotify, Music and (optionally) any other player, with artwork, controls and a seek bar you can always grab. Scroll sideways to seek and up/down for volume. Sound bars can follow the actual audio.
 - **Up Next:** the upcoming songs beside the cover; click one to jump straight to it (Spotify via its Web API, Music via AppleScript).
 - **Claude Code:** thinking / running `Edit · App.swift` / **needs permission** (amber) / **asking you something** (blue) / done, with the chat title, model, context and plan limits (session and weekly, like the Claude app). Click to open that exact chat; scroll to switch chats. Each chat keeps its own colour, and a chat waiting for you elsewhere shows on the +N badge. Answer questions, permissions and plans right in the notch (opt-in).
